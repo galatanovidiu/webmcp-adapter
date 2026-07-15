@@ -16,14 +16,20 @@
  */
 
 import { registerAbility } from '@wordpress/abilities';
-import { getEditor, NOT_IN_EDITOR } from './store.js';
+import {
+	getEditor,
+	NOT_IN_EDITOR,
+	findUnknownBlockNames,
+	buildBlocks,
+	snapshotTree,
+} from './store.js';
 
 registerAbility( {
 	name: 'webmcp/insert-blocks',
 	category: 'webmcp',
 	label: 'Insert blocks',
 	description:
-		'Build and insert one or more blocks into the post open in the WordPress block editor (Gutenberg), live and unsaved. Provide `blocks`: an array of nodes, each {name, attributes?, innerBlocks?}, where innerBlocks is an array of the same node shape (recursive) — so one call can build a whole nested section (e.g. cover > heading + paragraph + buttons > button). Attributes use the native Gutenberg shape: top-level preset attrs (backgroundColor, textColor, gradient, fontSize, align, anchor, layout, content, level, text) plus a nested `style` object (style.spacing.padding, style.color, style.typography, style.border). Use list-block-types for the valid attribute keys and get-theme-design-tokens for on-brand slugs. Position with rootClientId (default top level) and index (default append; 0 to prepend). Returns the created clientId tree. Tips the schema can’t enforce: a solid-color cover needs dimRatio:100 (50 looks washed out); a core/quote body is innerBlocks paragraphs + a citation attribute, NOT the deprecated `value`; on a colored band set a contrasting textColor. Does not save the post.',
+		'Build and insert one or more blocks into the content open in the WordPress block editor (Gutenberg) — post editor or Site Editor — live and unsaved. Provide `blocks`: an array of nodes, each {name, attributes?, innerBlocks?}, where innerBlocks is an array of the same node shape (recursive) — so one call can build a whole nested section (e.g. cover > heading + paragraph + buttons > button). Attributes use the native Gutenberg shape: top-level preset attrs (backgroundColor, textColor, gradient, fontSize, align, anchor, layout, content, level, text) plus a nested `style` object (style.spacing.padding, style.color, style.typography, style.border). Use list-block-types for the valid attribute keys and get-theme-design-tokens for on-brand slugs. Position with rootClientId (default top level) and index (default append; 0 to prepend). Returns the created clientId tree. Tips the schema can’t enforce: a solid-color cover needs dimRatio:100 (50 looks washed out); a core/quote body is innerBlocks paragraphs + a citation attribute, NOT the deprecated `value`; on a colored band set a contrasting textColor. Media wiring: a core/image needs BOTH {id, url} (plus alt, sizeSlug) — url alone silently loses srcset and the media-library link; a core/cover image background is {url, id, backgroundType:"image", dimRatio} (it also supports useFeaturedImage:true); a gallery is core/gallery with core/image innerBlocks (its top-level ids/images attrs are legacy — do not set them). To duplicate an existing block, read-blocks its subtree and insert that same spec (first check supports.multiple in list-block-types). Does not save the post.',
 	input_schema: {
 		type: 'object',
 		properties: {
@@ -77,37 +83,13 @@ registerAbility( {
 
 		// Validate every block name up front so a typo fails clearly instead of
 		// inserting a broken block.
-		const unknown = [];
-		const collect = ( nodes ) => {
-			for ( const node of nodes ) {
-				if ( ! ctx.blocks.getBlockType( node?.name ) ) {
-					unknown.push( node?.name );
-				}
-				if ( Array.isArray( node?.innerBlocks ) ) {
-					collect( node.innerBlocks );
-				}
-			}
-		};
-		collect( blocks );
+		const unknown = findUnknownBlockNames( blocks, ctx.blocks );
 		if ( unknown.length ) {
-			return { inserted: false, unknownBlocks: [ ...new Set( unknown ) ] };
+			return { inserted: false, unknownBlocks: unknown };
 		}
 
-		// Build recursively; createBlock mints a clientId per block. Snapshot the
-		// tree BEFORE dispatch (dispatch returns nothing useful).
-		const build = ( node ) =>
-			ctx.blocks.createBlock(
-				node.name,
-				node.attributes ?? {},
-				( node.innerBlocks ?? [] ).map( build )
-			);
-		const built = blocks.map( build );
-		const snapshot = ( block ) => ( {
-			clientId: block.clientId,
-			name: block.name,
-			innerBlocks: block.innerBlocks.map( snapshot ),
-		} );
-		const tree = built.map( snapshot );
+		const built = buildBlocks( blocks, ctx.blocks );
+		const tree = snapshotTree( built );
 
 		const root = rootClientId || '';
 		const at = index != null ? index : ctx.blockEditor.getBlockCount( root );

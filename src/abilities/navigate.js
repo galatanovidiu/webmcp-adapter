@@ -20,7 +20,7 @@ registerAbility( {
 	category: 'webmcp',
 	label: 'Navigate',
 	description:
-		'Navigate the current tab to a URL on this site (e.g. /wp-admin/plugins.php). The tab reloads, so tools re-register on the new page; list tools again afterwards.',
+		'Navigate the current tab to a URL on this site (e.g. /wp-admin/plugins.php). The tab reloads, so tools re-register on the new page; list tools again afterwards. Caution: if a block editor with unsaved changes is open (editor-context isDirty:true), the browser shows a native leave-page dialog you cannot confirm — save or discard first.',
 	input_schema: {
 		type: 'object',
 		properties: {

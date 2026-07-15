@@ -39,3 +39,63 @@ export function getEditor() {
 const NOT_IN_EDITOR = 'This tab is not editing a post in the block editor.';
 
 export { NOT_IN_EDITOR };
+
+/**
+ * Collects the unknown block names in a recursive {name, attributes, innerBlocks}
+ * spec, so a typo fails clearly before anything is built. Shared by insert-blocks
+ * and replace-blocks.
+ *
+ * @param {Array}  nodes  Spec nodes.
+ * @param {Object} blocks The wp.blocks namespace.
+ * @return {string[]} De-duplicated unknown names ([] when all are registered).
+ */
+export function findUnknownBlockNames( nodes, blocks ) {
+	const unknown = [];
+	const walk = ( list ) => {
+		for ( const node of list ) {
+			if ( ! blocks.getBlockType( node?.name ) ) {
+				unknown.push( node?.name );
+			}
+			if ( Array.isArray( node?.innerBlocks ) ) {
+				walk( node.innerBlocks );
+			}
+		}
+	};
+	walk( nodes );
+	return [ ...new Set( unknown ) ];
+}
+
+/**
+ * Builds real block instances from a recursive spec. createBlock mints a clientId
+ * per block and sanitizes attributes, so the result is valid by construction.
+ *
+ * @param {Array}  nodes  Spec nodes ({name, attributes?, innerBlocks?}).
+ * @param {Object} blocks The wp.blocks namespace.
+ * @return {Array} Block instances ready for insertBlocks/replaceBlocks.
+ */
+export function buildBlocks( nodes, blocks ) {
+	const build = ( node ) =>
+		blocks.createBlock(
+			node.name,
+			node.attributes ?? {},
+			( node.innerBlocks ?? [] ).map( build )
+		);
+	return nodes.map( build );
+}
+
+/**
+ * Snapshots built blocks to a plain {clientId, name, innerBlocks} tree — the
+ * result shape the agent uses to target follow-up writes. Snapshot BEFORE
+ * dispatch; the dispatch returns nothing useful.
+ *
+ * @param {Array} built Block instances.
+ * @return {Array} The clientId tree.
+ */
+export function snapshotTree( built ) {
+	const snapshot = ( block ) => ( {
+		clientId: block.clientId,
+		name: block.name,
+		innerBlocks: block.innerBlocks.map( snapshot ),
+	} );
+	return built.map( snapshot );
+}

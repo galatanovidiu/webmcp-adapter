@@ -13,6 +13,11 @@
  * to route it through the confirmation modal if a site wants confirm-on-delete.)
  * Does NOT save the post.
  *
+ * removeBlocks fails SILENTLY when removal is refused (a locked block, templateLock,
+ * or a block-removal-prompt rule that diverts into a dialog), so the callback
+ * re-reads each id after dispatch and reports what actually happened — same idiom
+ * as insert-blocks' post-dispatch re-read.
+ *
  * @package WebmcpAdapter
  */
 
@@ -24,7 +29,7 @@ registerAbility( {
 	category: 'webmcp',
 	label: 'Remove blocks',
 	description:
-		'Remove one or more blocks from the post open in the WordPress block editor, by clientId (from read-blocks or an insert result). Use it to delete an unwanted section or clear pre-existing content before building. Applies live and unsaved (Ctrl+Z undoes it); does not save the post.',
+		'Remove one or more blocks from the content open in the WordPress block editor, by clientId (from read-blocks or an insert result). Use it to delete an unwanted section or clear pre-existing content before building. Reports blockedClientIds when removal is refused (locked block or templateLock). Applies live and unsaved (Ctrl+Z undoes it); does not save the post.',
 	input_schema: {
 		type: 'object',
 		properties: {
@@ -61,9 +66,32 @@ registerAbility( {
 			return { removed: false, reason: 'Provide clientId or clientIds.' };
 		}
 
+		// Fail atomically on a bad id, so a typo is never reported as "removed".
+		const unknown = ids.filter( ( id ) => ! ctx.blockEditor.getBlock( id ) );
+		if ( unknown.length ) {
+			return {
+				removed: false,
+				reason: 'Unknown clientId(s): ' + unknown.join( ', ' ),
+			};
+		}
+
 		await ctx.data
 			.dispatch( 'core/block-editor' )
 			.removeBlocks( ids, selectPrevious ?? true );
+
+		// removeBlocks refuses SILENTLY (locked block, templateLock, or a removal
+		// prompt diverted the dispatch). Re-read each id to report the truth.
+		const blocked = ids.filter( ( id ) => ctx.blockEditor.getBlock( id ) );
+		if ( blocked.length ) {
+			return {
+				removed: false,
+				removedClientIds: ids.filter(
+					( id ) => ! blocked.includes( id )
+				),
+				blockedClientIds: blocked,
+				reason: 'Removal was refused for some blocks (locked block or templateLock).',
+			};
+		}
 
 		return { removed: true, clientIds: ids };
 	},

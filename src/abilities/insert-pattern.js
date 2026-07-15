@@ -25,7 +25,7 @@ registerAbility( {
 	category: 'webmcp',
 	label: 'Insert pattern',
 	description:
-		'Insert a designed block pattern (a full, theme-styled section) into the post open in the WordPress block editor, live and unsaved. Pass a pattern `name` from list-patterns (e.g. "twentytwentyfive/banner-hero"). Position with rootClientId (default top level) and index (default append; 0 to prepend). Returns the inserted top-level clientIds — read-blocks that subtree to get inner clientIds, then tune with update-block-attributes. Does not save the post.',
+		'Insert a designed block pattern (a full, theme-styled section) into the content open in the WordPress block editor, live and unsaved. Pass a pattern `name` from list-patterns (e.g. "twentytwentyfive/banner-hero"). Position with rootClientId (default top level) and index (default append; 0 to prepend). Returns the inserted top-level clientIds — read-blocks that subtree to get inner clientIds, then tune with update-block-attributes. Does not save the post.',
 	input_schema: {
 		type: 'object',
 		properties: {
