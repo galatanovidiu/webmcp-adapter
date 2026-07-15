@@ -1,0 +1,10 @@
+{
+	"name": "webmcp-playwright-skill",
+	"version": "1.0.0",
+	"private": true,
+	"type": "module",
+	"description": "Playwright driver for the WebMCP adapter (uses system Chrome, no bundled browser).",
+	"dependencies": {
+		"playwright": "^1.49.0"
+	}
+}
