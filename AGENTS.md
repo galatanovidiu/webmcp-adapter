@@ -22,16 +22,22 @@ wp-admin set. The dependency is one-way (adapter → catalog); the catalog does 
 
 ## Current state
 
-- v0.11.0, active. Reads each ability from the client store and registers it as a WebMCP tool;
+- v0.12.0, active. Reads each ability from the client store and registers it as a WebMCP tool;
   subscribes to the store for late arrivals. Reads, writes, and the dangerous tier verified
   end-to-end in Chrome 149.
 - **Frontend editor abilities** (`src/abilities/`) drive the live Gutenberg editor via
-  `window.wp.data`: `navigate`, `editor-context`, and a generic block-CRUD + patterns set
-  (`read-blocks`, `list-block-types`, `get-theme-design-tokens`, `list-patterns`,
-  `insert-blocks`, `update-block-attributes`, `insert-pattern`, `remove-blocks`). Generic over
-  all ~109 block types (block = `{name, attributes, innerBlocks}`); do NOT add one ability per
-  block. Writes are unsaved editor edits (no DB write) so none are destructive-tier. Shared
-  guard in `src/abilities/store.js`. See docs/architecture.md.
+  `window.wp.data` — post editor AND Site Editor: `navigate`, `editor-context` (incl. the
+  human's live selection + document state), and a generic block-CRUD + patterns + document
+  set (`read-blocks`, `list-block-types`, `get-theme-design-tokens`, `list-patterns`,
+  `list-templates`, `insert-blocks`, `update-block-attributes`, `insert-pattern`,
+  `remove-blocks`, `move-blocks`, `replace-blocks`, `edit-post-attributes`, `undo`,
+  `save-post`). Generic over all ~109 block types (block = `{name, attributes, innerBlocks}`);
+  do NOT add one ability per block. Writes are unsaved editor edits (no DB write) so none are
+  destructive-tier — EXCEPT `save-post`, the one persistence gate (`destructive: true`; its
+  `status` arg is the publish flow; `edit-post-attributes` deliberately rejects `status` so a
+  write-tier call can never arm a publish). Media tools come from the catalog (`og-media/*`),
+  not this adapter. Shared guard + spec helpers in `src/abilities/store.js`. See
+  docs/architecture.md.
 - **Write-gating mechanism** (the adapter enforces the catalog's classification): THREE default-OFF
   settings (`webmcp_enable_write_tools`, `webmcp_enable_destructive_tools`,
   `webmcp_enable_dangerous_tools`) + a per-ability dangerous opt-in (`webmcp_dangerous_tools_optin`).

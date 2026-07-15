@@ -100,10 +100,14 @@ abilities** that act on the **open Gutenberg editor** through `window.wp.data`, 
 edits appear live and unsaved in the tab the user is watching — the user reviews, then undoes
 or saves. Rather than one tool per block (WordPress has ~109 core block types that all share
 the same `{ name, attributes, innerBlocks }` shape), it ships a small block-agnostic set:
-reads for discovery (`read-blocks`, `list-block-types`, `get-theme-design-tokens`,
-`list-patterns`) and writes that compose any layout (`insert-blocks`, `update-block-attributes`,
-`insert-pattern`, `remove-blocks`). The writes are behind `webmcp_enable_write_tools` and none
-persist to the database. See [docs/architecture.md](docs/architecture.md) for the design.
+reads for discovery and orientation (`editor-context`, `read-blocks`, `list-block-types`,
+`get-theme-design-tokens`, `list-patterns`, `list-templates`) and writes that compose and
+restructure any layout (`insert-blocks`, `update-block-attributes`, `insert-pattern`,
+`remove-blocks`, `move-blocks`, `replace-blocks`, `edit-post-attributes`, `undo`). The writes
+are behind `webmcp_enable_write_tools` and stage unsaved editor edits only. The one
+persistence gate is `save-post` (optionally publishing), which is destructive-tier: it also
+needs the destructive setting and a human confirmation in the page. See
+[docs/architecture.md](docs/architecture.md) for the design.
 
 ## Requirements
 

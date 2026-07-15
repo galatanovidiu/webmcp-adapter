@@ -95,25 +95,61 @@ is recursive, so a block tree *is* the insert spec. One ability per block would 
 agent with ~109 near-duplicate schemas; instead the adapter ships a small block-agnostic set
 that works for every block, with discovery moved from static schemas to runtime reads:
 
-- **Reads (always exposed):** `webmcp/editor-context` (which post is open),
-  `webmcp/read-blocks` (the live block tree with `clientId`s — the target of every write),
-  `webmcp/list-block-types` (each block's attribute contract + design `supports`),
-  `webmcp/get-theme-design-tokens` (theme preset slugs, so output stays on-brand),
-  `webmcp/list-patterns` (designed sections).
+- **Reads (always exposed):** `webmcp/editor-context` (what is open, document state —
+  dirty/saveable/published/permalink — and the human's live SELECTION: when the user says
+  "this", the selected blocks are what they mean), `webmcp/read-blocks` (the live block tree
+  with `clientId`s — the target of every write; a `names` targeting mode returns a flat match
+  list, `attributeKeys` projects, and a block that failed markup validation carries
+  `isValid:false`), `webmcp/list-block-types` (each block's attribute contract + design
+  `supports`), `webmcp/get-theme-design-tokens` (theme preset slugs, so output stays
+  on-brand), `webmcp/list-patterns` (designed sections), `webmcp/list-templates` (templates +
+  template parts with Site Editor edit URLs; the slugs feed `edit-post-attributes`).
 - **Writes (behind `webmcp_enable_write_tools`):** `webmcp/insert-blocks` (build a nested
   section from a recursive spec; returns the created `clientId` tree),
-  `webmcp/update-block-attributes` (deep-merge an attribute patch by `clientId`),
-  `webmcp/insert-pattern` (drop a theme-designed section), `webmcp/remove-blocks`. **None save
-  to the database**, so none are destructive-tier — every edit is unsaved and undo-able.
+  `webmcp/update-block-attributes` (deep-merge an attribute patch by `clientId`; per-block
+  `updates` batch and `unset` dot-paths, dispatched ONCE so one call is one undo step),
+  `webmcp/insert-pattern` (drop a theme-designed section), `webmcp/remove-blocks`,
+  `webmcp/move-blocks` (reorder/reparent preserving `clientId`s), `webmcp/replace-blocks`
+  (atomic swap; `transformTo` runs the registered block transforms, including
+  group/ungroup), `webmcp/edit-post-attributes` (the document sidebar: title, slug, excerpt,
+  featured image, template, terms, meta — it REJECTS `status`), and `webmcp/undo` (step the
+  shared history; the write set's recovery half). All of these stage **unsaved** edits —
+  nothing touches the database, so none are destructive-tier.
+- **The one destructive-tier exception:** `webmcp/save-post` persists the staged edits, and
+  its optional `status` arg is the real publish flow (core's publish button is exactly
+  `editPost({status},{undoIgnore:true})` + `savePost()`). It is `destructive: true` even for
+  a plain save — saving an already-published post updates the live page — so it sits behind
+  the write + destructive settings AND the isTrusted confirmation modal, where the human sees
+  `status:"publish"` in the args before approving. This is also why `edit-post-attributes`
+  rejects `status`: the modal shows a call's args, not accumulated prior edits, so a
+  write-tier status flip would arm the human's next innocent-looking confirmed save into a
+  silent publish (on a failed save, `save-post` reverts its own staged flip for the same
+  reason).
 
-The shared editor guard lives in [src/abilities/store.js](../src/abilities/store.js)
-(`getEditor()` — a helper, not an ability; the barrel does not import it). Client-API gotchas
-that shaped the code: theme token presets are flat arrays for some keys but `{default, theme}`
-objects for `fontFamilies`/`spacingSizes` (version-dependent); patterns need
-`resolveSelect('core').getBlockPatterns()`, not `select` (the resolver is async and settings
-carry none); `updateBlockAttributes` shallow-merges (so the ability deep-merges `style`
-itself); and `insertBlocks` fails **silently** on `templateLock`/`allowedBlocks`, so the write
-abilities re-read the block after dispatch to report the real outcome.
+The shared editor guard and the spec build/snapshot helpers live in
+[src/abilities/store.js](../src/abilities/store.js) (`getEditor()` et al. — helpers, not
+abilities; the barrel does not import it). Client-API gotchas that shaped the code: theme
+token presets are flat arrays for some keys but `{default, theme}` objects for
+`fontFamilies`/`spacingSizes` (version-dependent); patterns and templates need
+`resolveSelect('core')`, not `select` (async resolvers — the `wp_template` entity config even
+loads lazily); `updateBlockAttributes` shallow-merges (so the ability deep-merges `style`
+itself, dispatches ONCE with `uniqueByBlock:true` for a single undo step, and unsets a
+top-level key by dispatching an explicit `undefined` — the reducer spreads the patch, so
+omission keeps the old value); `insertBlocks`, `removeBlocks`, `moveBlocksToPosition`, and
+`replaceBlocks` all fail **silently** when refused (`templateLock`/`allowedBlocks`/locks), so
+every write re-reads after dispatch to report the real outcome; and `switchToBlockType`
+returns `null` when no transform matches, so `replace-blocks` answers with the possible
+targets instead.
+
+Two scope notes. First, the whole set works in the **Site Editor** unchanged: `edit-site`
+initializes the unified `core/editor` store into the default `wp.data` registry
+(`useSubRegistry:false`) and the adapter enqueues on `site-editor.php`, so
+`getCurrentPostId()` is truthy there (a string id like `"theme//slug"`) and every tool
+operates on the open template or template part. Second, **media is the catalog's job**:
+`og-media/list-media`, `upload-media`, `update-media`, and `set-featured-image` already flow
+through the same store → tool path with real server-side capability checks, so this adapter
+ships no duplicate frontend media layer — wire an uploaded image into a block with
+`update-block-attributes` (`{url, id, alt}`).
 
 ## The critical gotcha: the store populates asynchronously and imperatively
 
@@ -217,7 +253,7 @@ agent can ignore it. Accepted for this proof of concept; tracked in the backlog.
 
 ## Status and next steps
 
-Current version: **v0.11.0**.
+Current version: **v0.12.0**.
 
 Done (all verified end-to-end in Chrome 149):
 - Local WP 7.0 install, Abilities API confirmed, plugin active.
