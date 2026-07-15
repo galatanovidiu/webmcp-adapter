@@ -201,13 +201,19 @@ async function cmdBatch(specRef) {
   });
 }
 
-// Full-page PNG of a URL, captured from the debug Chrome. Auto-accepts any
-// beforeunload dialog so a dirty editor cannot hang the navigation. The tab is
-// left on <url>, so re-run setup before driving editor tools again.
+// Full-page PNG of a URL, captured in a THROWAWAY tab so the tab you were driving
+// (e.g. the editor, with its loaded tools) is left untouched — no re-setup needed.
+// Auto-accepts any dialog so a stray beforeunload cannot hang the capture.
 async function cmdScreenshot(url, out, widthArg) {
   if (!url || !out) throw new Error('Usage: screenshot <url> <out.png> [width]');
   const width = Number(widthArg || 1400);
-  return withPage(async (cdp) => {
+  await ensureChrome();
+  // Open a fresh tab (PUT is required by current Chrome for /json/new).
+  const tab = await (await fetch(`${BASE}/json/new?about:blank`, { method: 'PUT' })).json();
+  const cdp = await connect(tab.webSocketDebuggerUrl);
+  try {
+    await cdp.send('Page.enable');
+    await cdp.send('Runtime.enable');
     cdp.on('Page.javascriptDialogOpening', () =>
       cdp.send('Page.handleJavaScriptDialog', { accept: true }).catch(() => {}));
     await cdp.send('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false });
@@ -220,7 +226,10 @@ async function cmdScreenshot(url, out, widthArg) {
     const shot = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true });
     fs.writeFileSync(out, Buffer.from(shot.data, 'base64'));
     return { ok: true, out, width, height };
-  });
+  } finally {
+    cdp.close();
+    await fetch(`${BASE}/json/close/${tab.id}`).catch(() => {}); // discard the throwaway tab
+  }
 }
 
 const [cmd, a, b, c] = process.argv.slice(2);
