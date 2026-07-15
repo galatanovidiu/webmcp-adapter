@@ -98,14 +98,20 @@ is logged two ways:
 - WordPress 7.0 or later (for the Abilities API in core).
 - PHP 8.1 or later.
 - A browser that exposes the WebMCP API (Chrome 149+ for `navigator.modelContext`).
+- **Recommended companion:** the [abilities-catalog](https://github.com/galatanovidiu/abilities-catalog)
+  plugin, which registers the core wp-admin ability set this adapter is built around. The dependency
+  is one-way and soft: this adapter exposes whatever abilities are registered, so it runs without the
+  catalog (only core abilities like `core/get-site-info` are then available), but the catalog is what
+  makes it useful. The catalog does not depend on this adapter.
 
 ## Install
 
 1. Copy this folder to `wp-content/plugins/webmcp-adapter`.
 2. Activate **WebMCP Adapter** in wp-admin.
-3. The abilities a site exposes depend on what is registered with the Abilities API. A
-   companion plugin can register a catalog of wp-admin abilities; without it, only core
-   abilities (such as `core/get-site-info`) are available.
+3. The abilities a site exposes depend on what is registered with the Abilities API. Install the
+   [abilities-catalog](https://github.com/galatanovidiu/abilities-catalog) companion plugin to
+   register the core wp-admin ability set; without it, only core abilities (such as
+   `core/get-site-info`) are available.
 4. To allow writes, enable the exposure settings (see Safety model). Leave them off for a
    read-only setup.
 
