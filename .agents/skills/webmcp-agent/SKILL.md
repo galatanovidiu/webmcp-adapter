@@ -94,6 +94,40 @@ WebMCP front-end tools this demo exists to prove. (They are fine for read-only l
 Why: the whole point here is the real, in-browser WebMCP front-end abilities. Building a page by
 driving the live editor is what shows the WebMCP tool surface working end to end.
 
+### Images: optional, and only with the user's explicit OK (it costs their money)
+
+This adapter authors text and blocks — it has no image source, so a page comes out plain unless
+you add media. There is no image model built into this skill. What you *can* offer:
+
+- Generation is a **direct HTTPS call to the Gemini image REST API** — the bundled `gen-image.py`
+  (next to this file) makes that call, or you can `curl` the endpoint yourself. It is **not** the
+  `gemini` CLI (that only emits text; it cannot write an image file), and **not** `codex` (its
+  `--image` flag only *attaches* an image as input). Image-capable models: e.g. `gemini-3-pro-image`,
+  `imagen-4.0`.
+- **Propose it; never generate on the user's behalf unprompted.** Each image is a **paid Gemini
+  API call billed to the user's own key** — say so up front (a handful of images = a handful of
+  paid calls) and generate only after they agree. Do not spend their money by default.
+- It needs a **`GEMINI_API_KEY` that the user provides** in the environment. No key → tell them
+  it's required and stop; never invent one or reach for another account.
+
+Once the user has agreed and the key is set, the flow is **generate → upload → wire in**:
+
+1. **Generate** — run the bundled helper (in this skill's directory). It POSTs to the
+   `generateContent` REST endpoint, decodes the base64 image, retries the endpoint's intermittent
+   404, and **errors loudly rather than writing an empty file**:
+   ```bash
+   # GEMINI_API_KEY must be in the env. Prompt is one argv — no shell-escaping.
+   python3 gen-image.py gemini-3-pro-image 16:9 hero.jpg \
+     "Wide cinematic photo of roasted coffee beans on a dark surface, no text"
+   ```
+   `aspect`: `16:9` (hero), `1:1` (card image), or `-` to omit. Output bytes are JPEG (hence
+   `.jpg`). The helper is ~60 lines of plain `urllib` — read it for the exact request; no CLI or
+   SDK is involved.
+2. **Upload** — base64-encode the file and call `og-media-upload-media` (`file` + `filename`,
+   ≤8 MiB). It returns `{id, source_url}`.
+3. **Wire in** — put those into `core/cover` (hero: `{url, id, backgroundType:"image", dimRatio,
+   overlayColor}`) or `core/image` (needs BOTH `{id, url}`), via `insert-blocks` / `replace-blocks`.
+
 ## Prerequisites
 
 A WordPress site must be running with both plugins active. Easiest: `npx wp-env start` from the
@@ -136,6 +170,12 @@ faster than N separate `call`s. Keep `webmcp-navigate` and `webmcp-save-post` OU
 batch: navigate reloads the page mid-batch, and save pops the confirmation modal you
 want to time yourself.
 
+`batch` reports `{ok, failed, count, results}`, and each entry in `results` has its own
+`ok`. A tool can run without throwing yet still *refuse* the action (e.g. an insert
+returns `{inserted:false, reason:"…"}`) — those count as failures, so `ok:false` and a
+non-zero exit code. **Do not assume a batch worked** because it printed results: check
+`ok` (or the exit code), and read each refused step's `reason`.
+
 ## Workflow
 
 1. **Orient the user** (the section above) — the first thing, always.
@@ -145,7 +185,10 @@ want to time yourself.
    down), logs in, loads the given wp-admin URL (default `/wp-admin/`), and waits for the async
    ability store to populate. Confirm the returned `tools` array is non-empty. **To author, pass
    the editor URL** — `setup "/wp-admin/post-new.php?post_type=post"` — and you land in the editor
-   with all tools (including the `webmcp/*` editor set) ready; no separate navigate + wait.
+   with all tools (including the `webmcp/*` editor set) ready; no separate navigate + wait. When
+   the target is an editor, `setup` also waits for the block tree to settle and returns
+   `editorSettled: true` — that is your signal the block clientIds are stable to read and mutate
+   (see the clientId gotcha below).
 4. **`list`** — read each tool's `name`, `description`, and `inputSchema`.
 5. **Reason and act** — pick the tool(s) that satisfy the request, build args that fit the
    schema, run `call`, read the JSON result. Destructive/dangerous calls need the human to
@@ -170,6 +213,17 @@ want to time yourself.
 - `webmcp-insert-blocks` builds via `createBlock`, so its output is **valid by construction** — no
   post-insert validity re-read needed. Only `webmcp-insert-pattern` parses markup and can yield
   broken blocks; it reports any as `invalidBlocks` in its result.
+- **Block clientIds are not durable — re-read right before you mutate.** The editor re-parses its
+  content whenever it (re)loads, regenerating every clientId. A `replace`/`update`/`move`/`remove`
+  targeting a stale id fails with `Unknown clientId(s)`; an insert with a stale `rootClientId` fails
+  with the misleading `allowedBlocks or templateLock`. `setup` into an editor now waits for the tree
+  to settle (`editorSettled: true`), so IDs from a `read-blocks` right after `setup` are safe. But
+  anything that reloads or re-renders mid-session — a `webmcp-navigate`, or opening a template in the
+  Site Editor — invalidates them again: `read-blocks` and build the mutation from that fresh read,
+  don't reuse ids captured before the reload.
+- A `batch` that prints results is **not** proof it worked — a step can be refused without throwing.
+  Check the top-level `ok`/`failed` (or the non-zero exit code) and each `results[].ok`, then read
+  the refused step's `reason`. See the `batch` note under Quick start.
 - The WP login is a session cookie; it clears when Chrome restarts. `setup` re-logs in.
 - Only the debug Chrome (the `CDP_PORT`) is reachable, not the user's normal Chrome.
 - After editing `adapter.js`, reload with cache disabled or bump `WEBMCP_ADAPTER_VERSION`.

@@ -14,6 +14,8 @@
  *   node webmcp.mjs call <name> '<json>'|@file   Execute a tool with JSON args (inline or @path)
  *   node webmcp.mjs batch '<json>'|@file|-       Run [{name,args},…] in ONE CDP session
  *                                                (@path, or - for stdin). Same-page calls only.
+ *                                                Reports {ok, failed, results[].ok}; exits
+ *                                                non-zero if any step failed or was refused.
  *   node webmcp.mjs screenshot <url> <out> [w]   Full-page PNG of a URL (default width 1400)
  *
  * Configuration (all optional, sensible defaults):
@@ -28,6 +30,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const PORT = process.env.CDP_PORT || '9222';
 const WP_URL = process.env.WP_URL || 'http://localhost:8080';
@@ -154,8 +157,51 @@ async function cmdSetup(adminPath) {
       tools = await evaluate(cdp, `(async () => { const t = ${TESTING}; return t ? (await t.listTools()).map(x=>x.name) : []; })()`, true);
       if (tools.length) break;
     }
-    return { ok: true, url: await evaluate(cdp, 'location.href'), tools };
+    // A block editor re-parses its content once after mount, regenerating every
+    // block clientId. Wait for the top-level clientIds to stop changing so a
+    // caller's read-blocks → mutate sequence targets IDs that still exist.
+    // editorSettled is null when the tab is not a block editor (nothing to wait
+    // for), true once two consecutive reads match, false if it never stabilized.
+    const idsExpr = `(() => {
+      const s = window.wp && wp.data && wp.data.select('core/block-editor');
+      if (!s || typeof s.getBlocks !== 'function') return null;
+      return JSON.stringify(s.getBlocks().map((b) => b.clientId));
+    })()`;
+    let editorSettled = null;
+    let prevIds = null;
+    for (let i = 0; i < 20; i++) {
+      const ids = await evaluate(cdp, idsExpr);
+      if (ids === null) break; // not a block editor
+      if (ids === prevIds) { editorSettled = true; break; }
+      editorSettled = false;
+      prevIds = ids;
+      await sleep(400);
+    }
+    return { ok: true, url: await evaluate(cdp, 'location.href'), tools, editorSettled };
   });
+}
+
+/**
+ * Did a batch step actually succeed? A tool can run without throwing yet still
+ * refuse the action — the WebMCP testing hook reports that in the result, not as
+ * an exception, so a naive batch looked "ok" while every write was rejected.
+ * False on: an exec/transport error; a declined confirmation ({cancelled:true});
+ * an explicit {ok:false}/{success:false}; or the editor write tools' refusal
+ * shape ({inserted|replaced|moved|…:false, reason:"…"}). The result value is the
+ * tool's own JSON string; an opaque (non-JSON) string is treated as success.
+ */
+export function stepOk(res) {
+  if (!res || res.error) return false;
+  let r = res.result;
+  if (typeof r === 'string') {
+    try { r = JSON.parse(r); } catch { return true; }
+  }
+  if (r && typeof r === 'object') {
+    if (r.cancelled === true || r.ok === false || r.success === false) return false;
+    // Editor writes signal refusal as an action flag set false alongside a reason.
+    if (typeof r.reason === 'string' && Object.values(r).some((v) => v === false)) return false;
+  }
+  return true;
 }
 
 /** Execute one tool in the page and return {result} or {error}; never throws. */
@@ -195,9 +241,12 @@ async function cmdBatch(specRef) {
     const results = [];
     for (const c of calls) {
       const argsJson = typeof c.args === 'string' ? c.args : JSON.stringify(c.args ?? {});
-      results.push({ name: c.name, ...(await execTool(cdp, c.name, argsJson)) });
+      const res = { name: c.name, ...(await execTool(cdp, c.name, argsJson)) };
+      res.ok = stepOk(res);
+      results.push(res);
     }
-    return { ok: true, results };
+    const failed = results.filter((r) => !r.ok).length;
+    return { ok: failed === 0, failed, count: results.length, results };
   });
 }
 
@@ -232,20 +281,25 @@ async function cmdScreenshot(url, out, widthArg) {
   }
 }
 
-const [cmd, a, b, c] = process.argv.slice(2);
-const run = cmd === 'ensure' ? cmdEnsure()
-  : cmd === 'setup' ? cmdSetup(a)
-  : cmd === 'list' ? cmdList()
-  : cmd === 'call' ? cmdCall(a, b)
-  : cmd === 'batch' ? cmdBatch(a)
-  : cmd === 'screenshot' ? cmdScreenshot(a, b, c)
-  : Promise.reject(new Error('Usage: webmcp.mjs <ensure|setup|list|call|batch|screenshot> [args]'));
-
 /** Synchronous write avoids stdout pipe truncation when process.exit() follows. */
 function finish(fd, text, code) {
   fs.writeSync(fd, text + '\n');
   process.exit(code);
 }
 
-run.then((out) => finish(1, JSON.stringify(out, null, 2), 0))
-   .catch((e) => finish(2, 'ERROR: ' + e.message, 1));
+// Only dispatch when run as a CLI, not when imported (e.g. by the test).
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const [cmd, a, b, c] = process.argv.slice(2);
+  const run = cmd === 'ensure' ? cmdEnsure()
+    : cmd === 'setup' ? cmdSetup(a)
+    : cmd === 'list' ? cmdList()
+    : cmd === 'call' ? cmdCall(a, b)
+    : cmd === 'batch' ? cmdBatch(a)
+    : cmd === 'screenshot' ? cmdScreenshot(a, b, c)
+    : Promise.reject(new Error('Usage: webmcp.mjs <ensure|setup|list|call|batch|screenshot> [args]'));
+
+  // Exit non-zero when a command reports failure (e.g. a batch with a refused
+  // step), so scripts can branch on it while still reading the JSON on stdout.
+  run.then((out) => finish(1, JSON.stringify(out, null, 2), out && out.ok === false ? 1 : 0))
+     .catch((e) => finish(2, 'ERROR: ' + e.message, 1));
+}
