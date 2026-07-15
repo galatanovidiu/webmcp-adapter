@@ -93,6 +93,18 @@ is logged two ways:
   **Tools → Agent activity** admin screen lists past sessions and the actions in each run.
   Parameters are redacted before storage and retention is capped.
 
+## Frontend abilities: editing the block editor live
+
+Most abilities come from the server (PHP → REST). The adapter also ships **client-side
+abilities** that act on the **open Gutenberg editor** through `window.wp.data`, so the agent's
+edits appear live and unsaved in the tab the user is watching — the user reviews, then undoes
+or saves. Rather than one tool per block (WordPress has ~109 core block types that all share
+the same `{ name, attributes, innerBlocks }` shape), it ships a small block-agnostic set:
+reads for discovery (`read-blocks`, `list-block-types`, `get-theme-design-tokens`,
+`list-patterns`) and writes that compose any layout (`insert-blocks`, `update-block-attributes`,
+`insert-pattern`, `remove-blocks`). The writes are behind `webmcp_enable_write_tools` and none
+persist to the database. See [docs/architecture.md](docs/architecture.md) for the design.
+
 ## Requirements
 
 - WordPress 7.0 or later (for the Abilities API in core).

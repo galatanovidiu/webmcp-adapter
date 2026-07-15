@@ -79,6 +79,42 @@ bypass it). So frontend abilities may only do what page JS can already do — na
 the DOM, call REST the user is already authorized for. `webmcp/navigate` is the first one: it
 moves the tab to a same-origin URL and refuses off-site targets.
 
+### Gutenberg editor abilities: composing pages live
+
+The largest use of frontend abilities is editing the **open block editor** the user is
+watching. A callback reads and writes the editor data stores through `window.wp.data` and
+`window.wp.blocks` at call time, so a change lands in the editor **live and unsaved** — the
+user sees it and can undo (Ctrl+Z) or Save. This is why they are frontend, not server: the
+server `og-content-update-page` ability persists to the database, would not appear in the open
+editor, and could silently overwrite the user's unsaved edits. Rule: when an editor is open,
+edit through these live abilities, not the server content abilities.
+
+**One generic set, not one tool per block.** WordPress registers ~109 core block types, but
+they all share one shape — `{ name, attributes, innerBlocks }` — and `wp.blocks.createBlock`
+is recursive, so a block tree *is* the insert spec. One ability per block would flood the
+agent with ~109 near-duplicate schemas; instead the adapter ships a small block-agnostic set
+that works for every block, with discovery moved from static schemas to runtime reads:
+
+- **Reads (always exposed):** `webmcp/editor-context` (which post is open),
+  `webmcp/read-blocks` (the live block tree with `clientId`s — the target of every write),
+  `webmcp/list-block-types` (each block's attribute contract + design `supports`),
+  `webmcp/get-theme-design-tokens` (theme preset slugs, so output stays on-brand),
+  `webmcp/list-patterns` (designed sections).
+- **Writes (behind `webmcp_enable_write_tools`):** `webmcp/insert-blocks` (build a nested
+  section from a recursive spec; returns the created `clientId` tree),
+  `webmcp/update-block-attributes` (deep-merge an attribute patch by `clientId`),
+  `webmcp/insert-pattern` (drop a theme-designed section), `webmcp/remove-blocks`. **None save
+  to the database**, so none are destructive-tier — every edit is unsaved and undo-able.
+
+The shared editor guard lives in [src/abilities/store.js](../src/abilities/store.js)
+(`getEditor()` — a helper, not an ability; the barrel does not import it). Client-API gotchas
+that shaped the code: theme token presets are flat arrays for some keys but `{default, theme}`
+objects for `fontFamilies`/`spacingSizes` (version-dependent); patterns need
+`resolveSelect('core').getBlockPatterns()`, not `select` (the resolver is async and settings
+carry none); `updateBlockAttributes` shallow-merges (so the ability deep-merges `style`
+itself); and `insertBlocks` fails **silently** on `templateLock`/`allowedBlocks`, so the write
+abilities re-read the block after dispatch to report the real outcome.
+
 ## The critical gotcha: the store populates asynchronously and imperatively
 
 `@wordpress/core-abilities` fetches `/wp-abilities/v1/abilities` once over REST, then
@@ -181,12 +217,17 @@ agent can ignore it. Accepted for this proof of concept; tracked in the backlog.
 
 ## Status and next steps
 
-Current version: **v0.8.0**.
+Current version: **v0.11.0**.
 
 Done (all verified end-to-end in Chrome 149):
 - Local WP 7.0 install, Abilities API confirmed, plugin active.
 - Read tools registered from the client store, including late arrivals via the subscribe
   path.
+- Frontend abilities driving the live block editor: `navigate` and `editor-context`, plus a
+  generic block-CRUD + patterns set (`read-blocks`, `list-block-types`,
+  `get-theme-design-tokens`, `list-patterns`, `insert-blocks`, `update-block-attributes`,
+  `insert-pattern`, `remove-blocks`). Verified by building a hero + features + CTA landing
+  page from the tools alone.
 - Full write gate: three default-OFF settings (write / destructive / dangerous) plus the
   per-ability dangerous opt-in, gating dangerous tools by name. Write, destructive, and
   dangerous tiers all exercised.
