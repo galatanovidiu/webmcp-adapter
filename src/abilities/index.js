@@ -13,3 +13,15 @@
 // registered, and static imports evaluate in source order.
 import './category.js';
 import './navigate.js';
+import './editor-context.js';
+// Generic block-CRUD substrate + discovery + patterns: a small set of tools that
+// works across all registered block types, so the agent composes any layout
+// (insert-paragraph is retired — it is insert-blocks with {name:'core/paragraph'}).
+import './read-blocks.js';
+import './list-block-types.js';
+import './get-theme-design-tokens.js';
+import './list-patterns.js';
+import './insert-blocks.js';
+import './update-block-attributes.js';
+import './insert-pattern.js';
+import './remove-blocks.js';
