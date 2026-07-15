@@ -13,6 +13,9 @@
 // pushes each ability into the store imperatively (there is no store resolver).
 import '@wordpress/core-abilities';
 import { executeAbility, getAbilities, store as abilitiesStore } from '@wordpress/abilities';
+// Frontend abilities: client-side abilities register into the same store on import,
+// so the subscribe-based sync below turns each into a WebMCP tool automatically.
+import './abilities/index.js';
 
 // `navigator.modelContext` is the live API in Chrome 149; `document.modelContext`
 // replaces it in Chrome 150. Prefer document, fall back to navigator.

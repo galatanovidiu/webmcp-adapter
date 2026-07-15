@@ -56,6 +56,29 @@ Field mapping, ability → WebMCP tool:
 | `meta.annotations.readonly` | `annotations.readOnlyHint` | |
 | `executeAbility(name, params)` | `execute(params)` | result stringified for the agent |
 
+### Frontend abilities (client-side, no server)
+
+Abilities come from two sources, both in the **same** client store, so the adapter treats
+them identically:
+
+- **Server abilities** — `@wordpress/core-abilities` fetches them over REST; each gets a
+  `callback` that POSTs to `/wp-abilities/v1/abilities/{name}/run`. The server enforces the
+  `permission_callback` capability there.
+- **Frontend abilities** — registered in the browser under [src/abilities/](../src/abilities/)
+  via `registerAbility({ ..., callback })`. The `callback` is plain JS that runs in the page;
+  `executeAbility` invokes it directly, **no REST**. The adapter picks them up through the
+  same subscribe path and applies the same write gate, confirmation modal, and activity log.
+
+`src/abilities/index.js` is the barrel: it imports `category.js` first (registerAbility
+rejects an ability whose category is not already registered), then one file per ability.
+`adapter.js` imports the barrel once; adding an ability touches only `src/abilities/`.
+
+**Security limit:** a frontend callback runs with the user's session and has **no server-side
+capability check** (the client `permissionCallback` is not a trust boundary — page script can
+bypass it). So frontend abilities may only do what page JS can already do — navigate, touch
+the DOM, call REST the user is already authorized for. `webmcp/navigate` is the first one: it
+moves the tab to a same-origin URL and refuses off-site targets.
+
 ## The critical gotcha: the store populates asynchronously and imperatively
 
 `@wordpress/core-abilities` fetches `/wp-abilities/v1/abilities` once over REST, then
@@ -158,15 +181,27 @@ agent can ignore it. Accepted for this proof of concept; tracked in the backlog.
 
 ## Status and next steps
 
-Done:
-- Local WP 7.0 install, Abilities API confirmed, plugin scaffold active.
-- Read-only abilities verified end-to-end in real Chrome.
+Current version: **v0.8.0**.
+
+Done (all verified end-to-end in Chrome 149):
+- Local WP 7.0 install, Abilities API confirmed, plugin active.
+- Read tools registered from the client store, including late arrivals via the subscribe
+  path.
+- Full write gate: three default-OFF settings (write / destructive / dangerous) plus the
+  per-ability dangerous opt-in, gating dangerous tools by name. Write, destructive, and
+  dangerous tiers all exercised.
+- Confirmation modal for destructive/dangerous calls, gated on `event.isTrusted`, with the
+  default-OFF `webmcp_allow_automated_confirmation` demo bypass.
+- Activity log: in-page panel plus server-side persistence to `{prefix}webmcp_activity` and
+  a **Tools → Agent activity** review screen. `ActivityRedactor` scrubs secrets before
+  storage.
+- `tools/webmcp.mjs` CLI for driving the registered tools from a script.
 
 Open:
-- Test a destructive / write ability (option update) through the confirmation and
-  capability path. Abilities carry `meta.annotations.destructive`; WebMCP has no
-  built-in confirmation, so the plugin must decide how to gate writes.
+- **Advisory confirmation mode (security risk).** Telling the agent the confirmation mode
+  via the tool description and relying on it to comply is advisory only; a non-compliant
+  agent, or a click injected over the Chrome DevTools Protocol, bypasses the human-only
+  gate. Accepted for this proof of concept; tracked in the backlog.
 - Decide front-end (non-admin) exposure. Currently admin-only by design.
 - Relationship to the server-side `wp-ai-agent` Tool layer: treat abilities as the one
   registry; do not wire WebMCP to that layer directly.
-- A reusable in-repo verification harness (currently scratch scripts under `/tmp`).
