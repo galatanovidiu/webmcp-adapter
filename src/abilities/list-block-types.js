@@ -51,6 +51,12 @@ registerAbility( {
 				type: 'string',
 				description: 'Return the full schema for this one block type.',
 			},
+			names: {
+				type: 'array',
+				items: { type: 'string' },
+				description:
+					'Return full schemas for several block types in one call. Missing ones come back in a `notFound` list.',
+			},
 			category: {
 				type: 'string',
 				description:
@@ -65,7 +71,7 @@ registerAbility( {
 		additionalProperties: false,
 	},
 	meta: { annotations: { readonly: true, clientRegistered: true } },
-	callback: async ( { name, category, full } = {} ) => {
+	callback: async ( { name, names, category, full } = {} ) => {
 		const blocks = window.wp?.blocks;
 		if ( ! blocks?.getBlockTypes ) {
 			return { available: false, reason: 'The block editor is not loaded.' };
@@ -84,6 +90,20 @@ registerAbility( {
 			return blockType
 				? shape( blockType )
 				: { found: false, reason: 'Unknown block type: ' + name };
+		}
+
+		if ( names ) {
+			const blockTypes = [];
+			const notFound = [];
+			for ( const n of names ) {
+				const blockType = blocks.getBlockType( n );
+				if ( blockType ) {
+					blockTypes.push( shape( blockType ) );
+				} else {
+					notFound.push( n );
+				}
+			}
+			return notFound.length ? { blockTypes, notFound } : { blockTypes };
 		}
 
 		let types = blocks.getBlockTypes();

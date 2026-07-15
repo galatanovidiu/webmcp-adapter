@@ -20,12 +20,21 @@
 import { registerAbility } from '@wordpress/abilities';
 import { getEditor, NOT_IN_EDITOR } from './store.js';
 
+// Names of any blocks in a parsed tree that failed markup validation. parse() can
+// yield invalid blocks (unlike createBlock, which is valid by construction); this
+// lets the insert result flag them inline so the agent skips a validity re-read.
+const collectInvalid = ( list ) =>
+	( list ?? [] ).flatMap( ( block ) => [
+		...( block.isValid === false ? [ block.name ] : [] ),
+		...collectInvalid( block.innerBlocks ),
+	] );
+
 registerAbility( {
 	name: 'webmcp/insert-pattern',
 	category: 'webmcp',
 	label: 'Insert pattern',
 	description:
-		'Insert a designed block pattern (a full, theme-styled section) into the content open in the WordPress block editor, live and unsaved. Pass a pattern `name` from list-patterns (e.g. "twentytwentyfive/banner-hero"). Position with rootClientId (default top level) and index (default append; 0 to prepend). Returns the inserted top-level clientIds — read-blocks that subtree to get inner clientIds, then tune with update-block-attributes. Does not save the post.',
+		'Insert a designed block pattern (a full, theme-styled section) into the content open in the WordPress block editor, live and unsaved. Pass a pattern `name` from list-patterns (e.g. "twentytwentyfive/banner-hero"). Position with rootClientId (default top level) and index (default append; 0 to prepend). Returns the inserted top-level clientIds — read-blocks that subtree to get inner clientIds, then tune with update-block-attributes. If the pattern markup parsed to any broken blocks, the result also carries `invalidBlocks` (their names) — otherwise the insert is clean. Does not save the post.',
 	input_schema: {
 		type: 'object',
 		properties: {
@@ -88,6 +97,12 @@ registerAbility( {
 			};
 		}
 
-		return { inserted: true, clientIds: parsed.map( ( block ) => block.clientId ) };
+		const invalidBlocks = collectInvalid( parsed );
+		return {
+			inserted: true,
+			clientIds: parsed.map( ( block ) => block.clientId ),
+			// Present only when the pattern parsed to one or more broken blocks.
+			...( invalidBlocks.length ? { invalidBlocks } : {} ),
+		};
 	},
 } );
