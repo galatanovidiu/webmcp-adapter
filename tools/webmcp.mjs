@@ -5,10 +5,16 @@
  * consumer: discover tools, then execute them in the live page.
  *
  * Usage:
- *   node webmcp.mjs ensure                 Launch the debug Chrome if it is not up
- *   node webmcp.mjs setup                  ensure + log in + open wp-admin, wait for tools
- *   node webmcp.mjs list                   List registered WebMCP tools (JSON)
- *   node webmcp.mjs call <name> '<json>'   Execute a tool with JSON args
+ *   node webmcp.mjs ensure                       Launch the debug Chrome if it is not up
+ *   node webmcp.mjs setup [adminPath]            ensure + log in + open a wp-admin URL
+ *                                                (default /wp-admin/), wait for tools.
+ *                                                Pass an editor URL to land in it ready, e.g.
+ *                                                setup "/wp-admin/post-new.php?post_type=post"
+ *   node webmcp.mjs list                         List registered WebMCP tools (JSON)
+ *   node webmcp.mjs call <name> '<json>'|@file   Execute a tool with JSON args (inline or @path)
+ *   node webmcp.mjs batch '<json>'|@file|-       Run [{name,args},…] in ONE CDP session
+ *                                                (@path, or - for stdin). Same-page calls only.
+ *   node webmcp.mjs screenshot <url> <out> [w]   Full-page PNG of a URL (default width 1400)
  *
  * Configuration (all optional, sensible defaults):
  *   CDP_PORT=9222            Chrome remote-debugging port
@@ -31,6 +37,14 @@ const CHROME_BIN = process.env.CHROME_BIN || defaultChrome();
 const CHROME_PROFILE = process.env.CHROME_PROFILE || path.join(os.tmpdir(), 'wpwebmcp-chrome-profile');
 const BASE = `http://localhost:${PORT}`;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** Resolve a JSON-args argument: "@path" reads a file, "-" reads stdin, else literal. */
+function readArgs(ref) {
+  if (!ref) return '{}';
+  if (ref === '-') return fs.readFileSync(0, 'utf8');
+  if (ref.startsWith('@')) return fs.readFileSync(ref.slice(1), 'utf8');
+  return ref;
+}
 
 /** Best-guess Chrome path per platform. Override with CHROME_BIN. */
 function defaultChrome() {
@@ -71,18 +85,22 @@ function connect(wsUrl) {
     const ws = new WebSocket(wsUrl);
     let id = 0;
     const pending = new Map();
+    const listeners = new Map();
     ws.onmessage = (e) => {
       const m = JSON.parse(e.data);
       if (m.id && pending.has(m.id)) {
         const p = pending.get(m.id);
         pending.delete(m.id);
         m.error ? p.reject(new Error(JSON.stringify(m.error))) : p.resolve(m.result);
+      } else if (m.method && listeners.has(m.method)) {
+        listeners.get(m.method)(m.params);
       }
     };
     ws.onerror = () => reject(new Error('WebSocket error'));
     ws.onopen = () => resolve({
       send: (method, params = {}) =>
         new Promise((res, rej) => { const i = ++id; pending.set(i, { resolve: res, reject: rej }); ws.send(JSON.stringify({ id: i, method, params })); }),
+      on: (method, fn) => listeners.set(method, fn),
       close: () => ws.close(),
     });
   });
@@ -114,7 +132,9 @@ async function cmdEnsure() {
   return { chrome: await ensureChrome(), profile: CHROME_PROFILE, chromeBin: CHROME_BIN };
 }
 
-async function cmdSetup() {
+async function cmdSetup(adminPath) {
+  const path = adminPath || '/wp-admin/';
+  const dest = path.startsWith('http') ? path : `${WP_URL}${path}`;
   return withPage(async (cdp) => {
     await navigate(cdp, `${WP_URL}/wp-login.php`);
     await evaluate(cdp, `(() => {
@@ -127,7 +147,7 @@ async function cmdSetup() {
       return 'submitted';
     })()`);
     await sleep(1500);
-    await navigate(cdp, `${WP_URL}/wp-admin/`);
+    await navigate(cdp, dest);
     let tools = [];
     for (let i = 0; i < 16; i++) {
       await sleep(500);
@@ -136,6 +156,16 @@ async function cmdSetup() {
     }
     return { ok: true, url: await evaluate(cdp, 'location.href'), tools };
   });
+}
+
+/** Execute one tool in the page and return {result} or {error}; never throws. */
+function execTool(cdp, name, argsJson) {
+  return evaluate(cdp, `(async () => {
+    const t = ${TESTING};
+    if (!t) return { error: 'modelContextTesting unavailable' };
+    try { return { result: await t.executeTool(${JSON.stringify(name)}, ${JSON.stringify(argsJson)}) }; }
+    catch (e) { return { error: String(e && e.message || e) }; }
+  })()`, true);
 }
 
 async function cmdList() {
@@ -147,24 +177,60 @@ async function cmdList() {
     })()`, true));
 }
 
-async function cmdCall(name, argsJson) {
-  const args = argsJson || '{}';
+async function cmdCall(name, argsRef) {
+  const args = readArgs(argsRef);
   JSON.parse(args); // validate locally
-  return withPage(async (cdp) =>
-    evaluate(cdp, `(async () => {
-      const t = ${TESTING};
-      if (!t) return { error: 'modelContextTesting unavailable' };
-      try { return { result: await t.executeTool(${JSON.stringify(name)}, ${JSON.stringify(args)}) }; }
-      catch (e) { return { error: String(e && e.message || e) }; }
-    })()`, true));
+  return withPage((cdp) => execTool(cdp, name, args));
 }
 
-const [cmd, a, b] = process.argv.slice(2);
+// Run a list of [{name, args}] in ONE CDP session — no per-call process/connect
+// overhead. args may be a JSON object (from the file) or a JSON string. Runs
+// sequentially, capturing each call's {result}/{error}; never early-exits. For
+// SAME-PAGE sequences (a page build) — do not put webmcp-navigate mid-batch, it
+// reloads the page and drops the tools.
+async function cmdBatch(specRef) {
+  const calls = JSON.parse(readArgs(specRef || '-'));
+  if (!Array.isArray(calls)) throw new Error('batch expects a JSON array of {name, args}.');
+  return withPage(async (cdp) => {
+    const results = [];
+    for (const c of calls) {
+      const argsJson = typeof c.args === 'string' ? c.args : JSON.stringify(c.args ?? {});
+      results.push({ name: c.name, ...(await execTool(cdp, c.name, argsJson)) });
+    }
+    return { ok: true, results };
+  });
+}
+
+// Full-page PNG of a URL, captured from the debug Chrome. Auto-accepts any
+// beforeunload dialog so a dirty editor cannot hang the navigation. The tab is
+// left on <url>, so re-run setup before driving editor tools again.
+async function cmdScreenshot(url, out, widthArg) {
+  if (!url || !out) throw new Error('Usage: screenshot <url> <out.png> [width]');
+  const width = Number(widthArg || 1400);
+  return withPage(async (cdp) => {
+    cdp.on('Page.javascriptDialogOpening', () =>
+      cdp.send('Page.handleJavaScriptDialog', { accept: true }).catch(() => {}));
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false });
+    await navigate(cdp, url);
+    await sleep(1200); // let fonts/gradients settle
+    const metrics = await cdp.send('Page.getLayoutMetrics');
+    const height = Math.ceil(metrics.cssContentSize?.height || metrics.contentSize?.height || 3000);
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false });
+    await sleep(400);
+    const shot = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true });
+    fs.writeFileSync(out, Buffer.from(shot.data, 'base64'));
+    return { ok: true, out, width, height };
+  });
+}
+
+const [cmd, a, b, c] = process.argv.slice(2);
 const run = cmd === 'ensure' ? cmdEnsure()
-  : cmd === 'setup' ? cmdSetup()
+  : cmd === 'setup' ? cmdSetup(a)
   : cmd === 'list' ? cmdList()
   : cmd === 'call' ? cmdCall(a, b)
-  : Promise.reject(new Error('Usage: webmcp.mjs <ensure|setup|list|call> [name] [jsonArgs]'));
+  : cmd === 'batch' ? cmdBatch(a)
+  : cmd === 'screenshot' ? cmdScreenshot(a, b, c)
+  : Promise.reject(new Error('Usage: webmcp.mjs <ensure|setup|list|call|batch|screenshot> [args]'));
 
 /** Synchronous write avoids stdout pipe truncation when process.exit() follows. */
 function finish(fd, text, code) {
