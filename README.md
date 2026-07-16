@@ -10,6 +10,42 @@ A WordPress plugin that bridges the WordPress core **Abilities API** to the brow
 WordPress abilities into structured tools that an in-tab AI agent (for example, Chrome's
 built-in agent) can discover and call.
 
+## Try it — drive it with Claude Code
+
+No shipping browser has a built-in WebMCP agent yet, so out of the box there is nothing to
+*call* the tools this plugin registers. This repo ships a Claude Code skill,
+**`/webmcp-agent`**, that stands in for that missing client: it launches Chrome with the
+WebMCP flag, connects over the DevTools Protocol, discovers the registered tools, and calls
+them to do what you ask.
+
+You need [Claude Code](https://claude.com/claude-code), Chrome 149 or later, and Docker (for
+the local WordPress).
+
+```bash
+git clone https://github.com/galatanovidiu/webmcp-adapter
+cd webmcp-adapter
+npx wp-env start   # local WordPress at http://localhost:8888 with this plugin AND the
+                   # abilities-catalog companion already active (requires Docker)
+claude             # open Claude Code in the repo
+```
+
+Then, inside Claude Code, run the skill:
+
+```
+/webmcp-agent                              # drive the local demo — it explains itself first
+/webmcp-agent create a page about coffee   # ...or just hand it a task
+/webmcp-agent https://your-site.com        # ...or point it at your own WordPress site
+```
+
+Claude Code logs in, waits for the tools to load, then drives them: reading site data and —
+when you enable writes — authoring pages live in the Gutenberg editor while you watch. No
+Docker? Use the bundled `webmcp-playground` skill instead (real-HTTP WordPress, no local
+install). Targeting your own site, `/webmcp-agent` walks you through installing both plugins
+and logging in first.
+
+> The skill is discovered through the `.claude/skills` symlink, which git recreates on clone
+> for macOS and Linux. On Windows, enable git symlinks (`git clone -c core.symlinks=true`).
+
 ## What it does
 
 WordPress 7.0 ships the Abilities API in core: a single, machine-readable registry of
@@ -122,14 +158,19 @@ needs the destructive setting and a human confirmation in the page. See
 
 ## Install
 
-1. Copy this folder to `wp-content/plugins/webmcp-adapter`.
-2. Activate **WebMCP Adapter** in wp-admin.
-3. The abilities a site exposes depend on what is registered with the Abilities API. Install the
-   [abilities-catalog](https://github.com/galatanovidiu/abilities-catalog) companion plugin to
-   register the core wp-admin ability set; without it, only core abilities (such as
-   `core/get-site-info`) are available.
-4. To allow writes, enable the exposure settings (see Safety model). Leave them off for a
-   read-only setup.
+For a local trial, use the [quick start](#try-it--drive-it-with-claude-code) above —
+`wp-env` installs and activates both plugins for you. Install manually to add the adapter to
+an existing site:
+
+1. Download `webmcp-adapter.zip` from the
+   [latest release](https://github.com/galatanovidiu/webmcp-adapter/releases/latest) and
+   upload it via **Plugins → Add New → Upload Plugin** (or copy this folder to
+   `wp-content/plugins/webmcp-adapter`). Activate **WebMCP Adapter**.
+2. Install the [abilities-catalog](https://github.com/galatanovidiu/abilities-catalog)
+   companion so the adapter has abilities worth exposing; without it, only core abilities
+   (such as `core/get-site-info`) are available.
+3. To allow writes, enable the exposure settings (see [Safety model](#safety-model)). Leave
+   them off for a read-only setup.
 
 ## Status
 
