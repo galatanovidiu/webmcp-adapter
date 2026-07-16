@@ -1,6 +1,6 @@
 ---
 name: webmcp-agent
-description: Act as the stand-in WebMCP client for this WordPress demo. FIRST explain to the user how the demo works and why a terminal agent (Claude Code / Codex) plays the browser AI client that does not exist yet — then discover the page's WebMCP tools in Chrome and call them. Use when the user asks to drive, test, demo, or use the WebMCP tools/abilities in the browser, run a wp-admin action through WebMCP, or says "/webmcp".
+description: Act as the stand-in WebMCP client for this WordPress plugin — discover the page's WebMCP tools in Chrome over the DevTools Protocol and call them, standing in for the in-browser AI agent that does not exist yet. Drives the local wp-env demo by default, or an external site when the invocation names one (a URL or bare domain). When invoked with no task it FIRST orients the user (what WebMCP is, why a terminal agent is the client); when given a task it skips the intro and does the work. Use when the user asks to drive, test, demo, or use the WebMCP tools/abilities in the browser, run a wp-admin action through WebMCP, author a page/post via the live editor, target another WordPress site, or says "/webmcp" or "/webmcp-agent".
 ---
 
 # WebMCP agent
@@ -13,39 +13,43 @@ the results.
 Background: [architecture](../../../docs/architecture.md),
 [development](../../../docs/development.md).
 
-## First: orient the user (do this BEFORE launching anything)
+## Invocation modes (read the argument FIRST)
 
-The whole point of this skill is a demo, and it only makes sense once the user understands
-the setup. So the **first thing you do** — before any Chrome launch or tool call — is explain
-it, in plain language, in your own words. Cover these three points:
+`/webmcp-agent` takes an optional argument. Parse it before doing anything else — it decides the
+target site, the login path, and whether to orient the user:
 
-1. **What WebMCP is.** A proposed browser standard: a web page publishes "tools" (actions) to
-   an AI agent running *inside the same tab*, via `document.modelContext` /
-   `navigator.modelContext` (Chrome 149+, behind a flag). Think of MCP, but the *page* is the
-   server and a *browser-native AI agent* is meant to be the client. This plugin turns every
-   registered WordPress ability into one such tool on wp-admin — "list posts", "insert a
-   block", "update a setting", and so on.
+| You were invoked with | Target site | Login | Orient? |
+|---|---|---|---|
+| **nothing** (`/webmcp-agent`) | wp-env demo (`http://localhost:8888`) | `setup` (auto-fills `admin`/`password`) | **yes** |
+| **a URL / bare domain** (`/webmcp-agent mysite.com`) | that external site | `check` (manual login) | yes |
+| **a task, no site** (`/webmcp-agent create a page about coffee`) | wp-env demo | `setup` | **no — just do it** |
+| **a site + a task** (`/webmcp-agent mysite.com draft a homepage`) | that external site | `check` | no |
 
-2. **Why a terminal agent (Claude Code / Codex) is the client here.** No shipping browser has
-   a built-in AI agent that consumes WebMCP yet — so in a real product there is nothing to
-   actually *call* these tools today. To bridge that, the same Chrome flag also exposes a
-   testing hook (`navigator.modelContextTesting`, with `listTools()` / `executeTool()`). A
-   terminal agent connects to Chrome over the DevTools Protocol and uses that hook to list and
-   run the tools. **So Claude Code / Codex is standing in for the future in-browser WebMCP
-   client** — reasoning about the request, picking tools, calling them in the live page,
-   reading the JSON back. This lets us build and test the entire tool surface — schemas, the
-   write-gating, the confirmation modal — end to end *now*. When a real in-browser WebMCP
-   client ships, it consumes these exact same tools with no CDP and no terminal agent.
+Rules for parsing:
 
-3. **What they can do through this connection.** See the next section; relay the gist.
+- **Target.** If the argument starts with a URL or bare domain, that is the site: set
+  `WP_URL` to it (prepend `https://` when the user gave a bare domain like `mysite.com`), and
+  leave `WP_USER` / `WP_PASS` **unset** — you will log in by hand via `check` (see "Driving an
+  external site" below). No leading site → the wp-env demo defaults
+  (`WP_URL=http://localhost:8888 WP_USER=admin WP_PASS=password`, driven with `setup`).
+- **Task.** Anything after the site (or the whole argument, if there is no site) is your task.
+- **Orient.** Deliver the orientation ONLY when the argument carries **no task** — a bare
+  `/webmcp-agent`, or just a site. It is the demo's pitch; if the user already told you what to do,
+  skip it and get to work.
 
-Keep it short — a few sentences per point, not a lecture. Then proceed.
+## Orientation (deliver only when there is no task)
+
+When you do need it (per the table above), read [`references/orientation.md`](references/orientation.md)
+and deliver its three points in your own words, in plain language, **before** launching Chrome or
+calling any tool. Then proceed to the workflow. When the user gave you a task, skip this entirely.
 
 ## What you can do through this connection
 
-Every registered ability becomes one tool. Because this runs on a **disposable local demo
-site**, enable *all* tiers — there is no real data to protect. (The plugin ships with writes
-off; that is its secure default for real sites, not a limit that matters here.)
+Every registered ability becomes one tool. **On the wp-env demo** (a disposable local site with no
+real data) enable *all* tiers freely — the plugin ships with writes off as its secure default for
+real sites, which does not matter here. **On an external site, do the opposite:** leave writes /
+destructive / dangerous OFF unless the human explicitly wants them, because those act on live
+content. The tiers below are the same either way; only the default posture differs.
 
 - **Reads — always on** (~64 today: site/settings/content/users/media/comments info, plus the
   editor reads). Safe to call freely.
@@ -134,6 +138,43 @@ A WordPress site must be running with both plugins active. Easiest: `npx wp-env 
 repo root (→ http://localhost:8888, `admin` / `password`). No-Docker alternative: the
 [webmcp-playground](../webmcp-playground/SKILL.md) skill. See [development.md](../../../docs/development.md).
 
+## Driving an external site (not wp-env)
+
+Same tools, real site. The only difference from the demo is **getting in**: `setup` auto-fills
+`WP_USER`/`WP_PASS` (fine for the local demo, wrong for a real login), so for an external site use
+`check` instead — it browses to wp-admin and *reports* what's needed rather than typing a password.
+
+`export WP_URL=https://the-site.example.com` (do **not** set `WP_USER`/`WP_PASS`), then loop on `check`:
+
+```bash
+node "$WEBMCP" check          # browse to wp-admin; report login + plugins + tools + next step
+```
+
+`check` returns `{loggedIn, plugins:{adapter, abilitiesSource}, tools, ready, next}`. Walk the human
+through whatever `next` says, then re-run `check` — repeat until `ready:true`, then use `list`/`call`/
+`batch`/`screenshot` exactly as in the demo.
+
+1. **Log in.** If `loggedIn:false`, tell the human to log in **in the visible Chrome this CLI opened**
+   (the debug-port window — NOT their normal Chrome; only that one has the WebMCP flag). Wait for them
+   to confirm, then re-run `check`. This handles SSO / 2FA / passkey — anything a password fill can't.
+2. **Plugins.** `check` reports each of the two required plugins as `active` / `inactive` / `missing`:
+   this **adapter** and an **abilities source** (the catalog — without it there are no tools). Activate
+   an inactive one from Plugins; install a missing one (see below).
+3. **Install from GitHub.** wp-admin has **no install-from-URL field**, so you cannot paste a GitHub
+   link into it. Two working paths (the exact zip URLs and commands are in `check`'s `next`):
+   - **Browser:** download each release `.zip`, then Plugins → Add New → **Upload Plugin** → Activate.
+   - **WP-CLI** (if the site has SSH/CLI): `wp plugin install "<release-zip-url>" --activate` — this
+     *does* pull straight from GitHub, one command per plugin.
+
+   The zips come from each repo's `releases/latest/download/…` (adapter: `webmcp-adapter.zip`, catalog:
+   `abilities-catalog.zip`). You cannot bootstrap these two via WebMCP itself — the tools only exist
+   *after* both are active.
+4. **Go.** Once `ready:true`, drive the tools normally.
+
+**Careful on a real site:** the demo advice to "enable all tiers" (below) is for a disposable local
+site with no real data. On a real site, leave writes/destructive/dangerous OFF unless the human
+explicitly wants them — those settings gate actions against live content.
+
 ## Paths and config
 
 Run from the **repo root**. The CLI lives at:
@@ -142,15 +183,19 @@ Run from the **repo root**. The CLI lives at:
 WEBMCP="tools/webmcp.mjs"
 ```
 
-Config is via env, all with defaults — set them to match your site. For the wp-env default:
+Config is via env, all with defaults — the "Invocation modes" table above tells you which to set.
+For the **wp-env demo** (bare invocation or a task with no site):
 
 ```bash
 export WP_URL=http://localhost:8888 WP_USER=admin WP_PASS=password
 ```
 
+For an **external site** (the invocation named one): `export WP_URL=https://the-site.example.com`
+and do NOT set `WP_USER`/`WP_PASS` — you log in by hand (see "Driving an external site").
+
 Other knobs: `CDP_PORT` (9222), `CHROME_BIN` (auto-detected per OS), `CHROME_PROFILE` (a
-throwaway dir under the system temp). The CLI's own defaults are `:8080` / `admin` / `admin`,
-so with wp-env you MUST set the three above.
+throwaway dir under the system temp). The CLI's own bare defaults are `:8080` / `admin` / `admin`,
+so for the wp-env demo you MUST export the three above.
 
 ## Quick start
 
@@ -178,17 +223,23 @@ non-zero exit code. **Do not assume a batch worked** because it printed results:
 
 ## Workflow
 
-1. **Orient the user** (the section above) — the first thing, always.
+1. **Parse the argument** (see "Invocation modes") — pick the target site and login path, and decide
+   whether to orient. **Orient the user only when the invocation carried no task**; when they gave
+   you a task, skip straight to step 2.
 2. **Preflight the WP server.** `curl -s -o /dev/null -w "%{http_code}" "$WP_URL/"` should be
    `200`/`302`. If not, start wp-env (or the Playground skill) first.
-3. **`setup [adminPath]`** — launches the debug Chrome with the WebMCP flag (if the CDP port is
-   down), logs in, loads the given wp-admin URL (default `/wp-admin/`), and waits for the async
-   ability store to populate. Confirm the returned `tools` array is non-empty. **To author, pass
-   the editor URL** — `setup "/wp-admin/post-new.php?post_type=post"` — and you land in the editor
-   with all tools (including the `webmcp/*` editor set) ready; no separate navigate + wait. When
-   the target is an editor, `setup` also waits for the block tree to settle and returns
-   `editorSettled: true` — that is your signal the block clientIds are stable to read and mutate
-   (see the clientId gotcha below).
+3. **Get in and wait for tools** — the command depends on the target:
+   - **wp-env demo → `setup [adminPath]`** — launches the debug Chrome with the WebMCP flag (if the
+     CDP port is down), logs in, loads the given wp-admin URL (default `/wp-admin/`), and waits for
+     the async ability store to populate. Confirm the returned `tools` array is non-empty. **To
+     author, pass the editor URL** — `setup "/wp-admin/post-new.php?post_type=post"` — and you land
+     in the editor with all tools (including the `webmcp/*` editor set) ready; no separate navigate +
+     wait. When the target is an editor, `setup` also waits for the block tree to settle and returns
+     `editorSettled: true` — your signal the block clientIds are stable to read and mutate (see the
+     clientId gotcha below).
+   - **External site → `check [adminPath]`** — reports login / plugins / tools instead of typing a
+     password; loop on it until `ready:true` (see "Driving an external site"). It returns the same
+     `editorSettled` signal when the target is an editor.
 4. **`list`** — read each tool's `name`, `description`, and `inputSchema`.
 5. **Reason and act** — pick the tool(s) that satisfy the request, build args that fit the
    schema, run `call`, read the JSON result. Destructive/dangerous calls need the human to
