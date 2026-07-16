@@ -12,11 +12,12 @@ built-in agent) can discover and call.
 
 ## Try it — drive it with Claude Code
 
-No shipping browser has a built-in WebMCP agent yet, so out of the box there is nothing to
-*call* the tools this plugin registers. This repo ships a Claude Code skill,
-**`/webmcp-agent`**, that stands in for that missing client: it launches Chrome with the
-WebMCP flag, connects over the DevTools Protocol, discovers the registered tools, and calls
-them to do what you ask.
+WebMCP is still an origin-trial API (Chrome 149+, behind a flag). The only browser agent
+consuming it today is Gemini in Chrome, inside that trial — so for a normal browser there is
+nothing to *call* the tools this plugin registers out of the box. This repo ships a Claude
+Code skill, **`/webmcp-agent`**, that stands in for that missing client: it launches Chrome
+with the WebMCP flag, connects over the DevTools Protocol, discovers the registered tools,
+and calls them to do what you ask.
 
 You need [Claude Code](https://claude.com/claude-code), Chrome 149 or later, and Docker (for
 the local WordPress).
