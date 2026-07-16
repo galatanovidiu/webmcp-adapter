@@ -9,10 +9,19 @@
  */
 
 // `@wordpress/core-abilities` populates the client store with server-registered
-// abilities. On import it fetches `/wp-abilities/v1/abilities` over REST and then
-// pushes each ability into the store imperatively (there is no store resolver).
-import '@wordpress/core-abilities';
-import { executeAbility, getAbilities, store as abilitiesStore } from '@wordpress/abilities';
+// abilities: it fetches `/wp-abilities/v1/abilities` over REST and pushes each into
+// the store imperatively (there is no store resolver). Older (WordPress-core) builds
+// do this as a side effect of import; the newer Gutenberg-plugin build changed the
+// contract to export an `initialize()` that must be called explicitly. Import for the
+// side effect (old build) AND call initialize() when it exists (new build). It is
+// async and idempotent, and the sync below subscribes for the late arrivals.
+import * as coreAbilities from '@wordpress/core-abilities';
+coreAbilities.initialize?.();
+import {
+	executeAbility,
+	getAbilities,
+	store as abilitiesStore,
+} from '@wordpress/abilities';
 // Frontend abilities: client-side abilities register into the same store on import,
 // so the subscribe-based sync below turns each into a WebMCP tool automatically.
 import './abilities/index.js';
@@ -61,7 +70,9 @@ const DANGEROUS_NAMES = new Set( readModuleArray( 'dangerousToolNames' ) );
 // (the default), the modal's accept path requires a real human click
 // (`event.isTrusted`). Read once here; any missing/unparseable/non-true value reads
 // as off (fail-safe: human-only).
-const AUTOMATED_CONFIRMATION_ALLOWED = readModuleFlag( 'allowAutomatedConfirmation' );
+const AUTOMATED_CONFIRMATION_ALLOWED = readModuleFlag(
+	'allowAutomatedConfirmation'
+);
 
 // Writes-only map of ability NAME to an admin-relative URL template with {param}
 // tokens (e.g. `post.php?post={id}&action=edit`). The server supplies it via the
@@ -315,7 +326,9 @@ function syncAbilitiesToTools() {
 			// Option-B gate. Writes are skipped without being marked registered,
 			// so they are re-evaluated on later store ticks (the decision is fixed
 			// per page load, so a skipped write stays skipped — fail-safe).
-			if ( ! shouldExpose( ability.meta?.annotations ?? {}, ability.name ) ) {
+			if (
+				! shouldExpose( ability.meta?.annotations ?? {}, ability.name )
+			) {
 				continue;
 			}
 			registered.add( ability.name );
@@ -373,8 +386,7 @@ function registerAbilityAsTool( ability ) {
 
 					return JSON.stringify( {
 						cancelled: true,
-						reason:
-							'The user declined this destructive action in the page.',
+						reason: 'The user declined this destructive action in the page.',
 					} );
 				}
 			}
@@ -459,7 +471,10 @@ function confirmDestructive( ability, params ) {
 		let automationMarker = null;
 		if ( AUTOMATED_CONFIRMATION_ALLOWED ) {
 			automationMarker = document.createElement( 'p' );
-			automationMarker.setAttribute( 'data-webmcp-confirm-automation', '' );
+			automationMarker.setAttribute(
+				'data-webmcp-confirm-automation',
+				''
+			);
 			automationMarker.textContent =
 				'⚙ Automated confirmation enabled — a script may confirm this without a human.';
 			automationMarker.style.cssText =
@@ -759,8 +774,7 @@ function logActivity( { ability, params, outcome } ) {
 		const list = mountActivityLog();
 		const panel = document.getElementById( 'webmcp-activity-log' );
 		const toggle = panel?.querySelector( '[data-webmcp-log-toggle]' );
-		const collapsed =
-			toggle?.getAttribute( 'aria-expanded' ) === 'false';
+		const collapsed = toggle?.getAttribute( 'aria-expanded' ) === 'false';
 
 		// Writes/destructive may carry a screen link; reads never do.
 		const isWrite = ability.meta?.annotations?.readonly !== true;
