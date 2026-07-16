@@ -6,10 +6,16 @@
  *
  * Usage:
  *   node webmcp.mjs ensure                       Launch the debug Chrome if it is not up
- *   node webmcp.mjs setup [adminPath]            ensure + log in + open a wp-admin URL
- *                                                (default /wp-admin/), wait for tools.
- *                                                Pass an editor URL to land in it ready, e.g.
+ *   node webmcp.mjs setup [adminPath]            ensure + log in (WP_USER/WP_PASS) + open a
+ *                                                wp-admin URL (default /wp-admin/), wait for tools.
+ *                                                For the wp-env demo. Pass an editor URL to land
+ *                                                in it ready, e.g.
  *                                                setup "/wp-admin/post-new.php?post_type=post"
+ *   node webmcp.mjs check [adminPath]            ensure + browse to wp-admin, then REPORT state
+ *                                                for an EXTERNAL site: logged in? both plugins
+ *                                                active? tools present? + what to do next. Does
+ *                                                NOT fill credentials — you log in by hand in the
+ *                                                opened Chrome. Re-run after logging in/installing.
  *   node webmcp.mjs list                         List registered WebMCP tools (JSON)
  *   node webmcp.mjs call <name> '<json>'|@file   Execute a tool with JSON args (inline or @path)
  *   node webmcp.mjs batch '<json>'|@file|-       Run [{name,args},…] in ONE CDP session
@@ -131,6 +137,43 @@ async function navigate(cdp, url) {
 
 const TESTING = `(navigator.modelContextTesting || document.modelContextTesting)`;
 
+/** Poll the WebMCP testing hook until it reports tools (or we give up). */
+async function waitForTools(cdp, tries = 16) {
+  let tools = [];
+  for (let i = 0; i < tries; i++) {
+    await sleep(500);
+    tools = await evaluate(cdp, `(async () => { const t = ${TESTING}; return t ? (await t.listTools()).map(x=>x.name) : []; })()`, true);
+    if (tools.length) break;
+  }
+  return tools;
+}
+
+/**
+ * A block editor re-parses its content once after mount, regenerating every
+ * block clientId. Wait for the top-level clientIds to stop changing so a
+ * caller's read-blocks → mutate sequence targets IDs that still exist.
+ * Returns null when the tab is not a block editor (nothing to wait for), true
+ * once two consecutive reads match, false if it never stabilized.
+ */
+async function waitEditorSettled(cdp) {
+  const idsExpr = `(() => {
+    const s = window.wp && wp.data && wp.data.select('core/block-editor');
+    if (!s || typeof s.getBlocks !== 'function') return null;
+    return JSON.stringify(s.getBlocks().map((b) => b.clientId));
+  })()`;
+  let editorSettled = null;
+  let prevIds = null;
+  for (let i = 0; i < 20; i++) {
+    const ids = await evaluate(cdp, idsExpr);
+    if (ids === null) break; // not a block editor
+    if (ids === prevIds) { editorSettled = true; break; }
+    editorSettled = false;
+    prevIds = ids;
+    await sleep(400);
+  }
+  return editorSettled;
+}
+
 async function cmdEnsure() {
   return { chrome: await ensureChrome(), profile: CHROME_PROFILE, chromeBin: CHROME_BIN };
 }
@@ -151,33 +194,73 @@ async function cmdSetup(adminPath) {
     })()`);
     await sleep(1500);
     await navigate(cdp, dest);
-    let tools = [];
-    for (let i = 0; i < 16; i++) {
-      await sleep(500);
-      tools = await evaluate(cdp, `(async () => { const t = ${TESTING}; return t ? (await t.listTools()).map(x=>x.name) : []; })()`, true);
-      if (tools.length) break;
-    }
-    // A block editor re-parses its content once after mount, regenerating every
-    // block clientId. Wait for the top-level clientIds to stop changing so a
-    // caller's read-blocks → mutate sequence targets IDs that still exist.
-    // editorSettled is null when the tab is not a block editor (nothing to wait
-    // for), true once two consecutive reads match, false if it never stabilized.
-    const idsExpr = `(() => {
-      const s = window.wp && wp.data && wp.data.select('core/block-editor');
-      if (!s || typeof s.getBlocks !== 'function') return null;
-      return JSON.stringify(s.getBlocks().map((b) => b.clientId));
-    })()`;
-    let editorSettled = null;
-    let prevIds = null;
-    for (let i = 0; i < 20; i++) {
-      const ids = await evaluate(cdp, idsExpr);
-      if (ids === null) break; // not a block editor
-      if (ids === prevIds) { editorSettled = true; break; }
-      editorSettled = false;
-      prevIds = ids;
-      await sleep(400);
-    }
+    const tools = await waitForTools(cdp);
+    const editorSettled = await waitEditorSettled(cdp);
     return { ok: true, url: await evaluate(cdp, 'location.href'), tools, editorSettled };
+  });
+}
+
+// The two plugins an external site needs for the tools to appear: this adapter,
+// plus an abilities source (the catalog) that actually registers abilities.
+// slug = the plugin folder (the top-level dir in each release zip). GitHub has
+// no install-from-URL in wp-admin, so remediation is upload-the-zip or WP-CLI.
+const REQUIRED_PLUGINS = [
+  { key: 'adapter', slug: 'webmcp-adapter', label: 'WebMCP Adapter',
+    zip: 'https://github.com/galatanovidiu/webmcp-adapter/releases/latest/download/webmcp-adapter.zip' },
+  { key: 'abilitiesSource', slug: 'abilities-catalog', label: 'Abilities Catalog (tools source)',
+    zip: 'https://github.com/galatanovidiu/abilities-catalog/releases/latest/download/abilities-catalog.zip' },
+];
+
+// Preflight an EXTERNAL (non-wp-env) site: browse to wp-admin, report whether
+// the human is logged in (manual login — no password in env), whether both
+// plugins are active, and whether tools appeared. Unlike setup, it never fills
+// credentials: it tells the caller what to do next. Re-run after logging in /
+// installing. list/call/batch work as-is once this reports ready.
+async function cmdCheck(adminPath) {
+  const p = adminPath || '/wp-admin/';
+  const dest = p.startsWith('http') ? p : `${WP_URL}${p}`;
+  const loginUrl = `${WP_URL}/wp-login.php`;
+  return withPage(async (cdp) => {
+    await navigate(cdp, dest);
+    const loggedIn = await evaluate(cdp,
+      `(document.body.classList.contains('wp-admin') && !/wp-login\\.php/.test(location.href))`);
+    if (!loggedIn) {
+      return { ok: false, ready: false, loggedIn: false, loginUrl,
+        next: `Not logged in. In the visible Chrome this CLI opened (debug port ${PORT} — NOT your normal Chrome), log in at ${loginUrl}, then re-run: node webmcp.mjs check` };
+    }
+    // Plugin presence: scrape the plugins screen — no REST nonce needed. Each
+    // row carries data-plugin="<folder>/<file>.php" and an active/inactive class.
+    await navigate(cdp, `${WP_URL}/wp-admin/plugins.php`);
+    const rows = (await evaluate(cdp, `(() => Array.from(document.querySelectorAll('tr[data-plugin]'))
+      .map(tr => ({ plugin: tr.getAttribute('data-plugin'), active: tr.classList.contains('active') })))()`)) || [];
+    const plugins = {};
+    for (const r of REQUIRED_PLUGINS) {
+      const row = rows.find((x) => x.plugin && x.plugin.startsWith(r.slug + '/'));
+      plugins[r.key] = { label: r.label, status: !row ? 'missing' : row.active ? 'active' : 'inactive', zip: r.zip };
+    }
+    const missing = REQUIRED_PLUGINS.filter((r) => plugins[r.key].status !== 'active');
+    // Back to the target and see whether tools registered.
+    await navigate(cdp, dest);
+    const tools = await waitForTools(cdp);
+    const editorSettled = await waitEditorSettled(cdp);
+
+    let next;
+    if (rows.length === 0) {
+      next = `Could not read the plugins list — is this user an administrator? Plugin status needs the plugins screen. Zips: ${REQUIRED_PLUGINS.map((r) => r.zip).join('  ')}`;
+    } else if (missing.length) {
+      const need = missing.map((r) => `${plugins[r.key].label} [${plugins[r.key].status}]`).join(', ');
+      const upload = missing.map((r) => plugins[r.key].zip).join('  ');
+      const cli = missing.map((r) => `wp plugin install "${plugins[r.key].zip}" --activate`).join(' ; ');
+      next = `Fix: ${need}. wp-admin has no install-from-URL field, so either — `
+        + `(a) download each zip and Plugins → Add New → Upload Plugin → Activate: ${upload}   OR `
+        + `(b) with WP-CLI/SSH on the site, install straight from GitHub: ${cli}   — then re-run: node webmcp.mjs check`;
+    } else if (!tools.length) {
+      next = `Both plugins active but no WebMCP tools. Confirm you logged in on THIS debug Chrome (port ${PORT}) — it is the one launched with the WebMCP flag — then reload and re-run check.`;
+    } else {
+      next = `Ready: ${tools.length} tools. Proceed with list / call / batch.`;
+    }
+    return { ok: missing.length === 0 && tools.length > 0, ready: missing.length === 0 && tools.length > 0,
+      loggedIn: true, url: await evaluate(cdp, 'location.href'), plugins, tools, editorSettled, next };
   });
 }
 
@@ -292,11 +375,12 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const [cmd, a, b, c] = process.argv.slice(2);
   const run = cmd === 'ensure' ? cmdEnsure()
     : cmd === 'setup' ? cmdSetup(a)
+    : cmd === 'check' ? cmdCheck(a)
     : cmd === 'list' ? cmdList()
     : cmd === 'call' ? cmdCall(a, b)
     : cmd === 'batch' ? cmdBatch(a)
     : cmd === 'screenshot' ? cmdScreenshot(a, b, c)
-    : Promise.reject(new Error('Usage: webmcp.mjs <ensure|setup|list|call|batch|screenshot> [args]'));
+    : Promise.reject(new Error('Usage: webmcp.mjs <ensure|setup|check|list|call|batch|screenshot> [args]'));
 
   // Exit non-zero when a command reports failure (e.g. a batch with a refused
   // step), so scripts can branch on it while still reading the JSON on stdout.
