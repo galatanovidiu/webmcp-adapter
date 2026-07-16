@@ -5,6 +5,7 @@
 # Build output
 /build/
 /dist/
+/webmcp-adapter.zip
 
 # OS / editor
 .DS_Store
