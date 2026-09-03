@@ -68,6 +68,8 @@ Completed:
   projection, reverse conversion, and fail-closed risk classification.
 - Added a six-page system-Chrome matrix with separate current-baseline and agreed
   contract modes. Each navigation verifies that it reached the requested path.
+- Added the pre-existing approved research and implementation plan to the task
+  branch unchanged so this handoff's owning links resolve in the pull request.
 - Kept `src/adapter.js`, the built-in Ability registrations, exposure settings, and
   all editor callbacks unchanged.
 
@@ -79,6 +81,9 @@ Files changed:
 - `tools/adapter-contract.test.mjs`
 - `tools/verify-page-scoping.mjs`
 - `.agents/scratches/page-scoped-webmcp/handoff.md`
+- `.agents/scratches/page-scoped-webmcp/implementation-plan.md` (pre-existing,
+  added unchanged)
+- `docs/page-scoped-webmcp-tools-research.md` (pre-existing, added unchanged)
 
 Verification performed:
 
@@ -113,9 +118,9 @@ Open risks or failures:
 Exact next action: review and merge Batch 0, then begin Batch 1 in a separately
 authorized session by wiring the protected pure contracts into the bridge.
 
-Commit/push status: four atomic Batch 0 commits existed locally when this evidence
-was captured. Push and pull-request creation were authorized as the immediate
-delivery step; no merge was performed.
+Commit/push status: seven atomic page-scoped planning and Batch 0 commits are on
+`test/page-scoped-webmcp-batch-0`. Push and pull-request creation are authorized as
+the immediate delivery step; no merge was performed.
 
 ## Session update template
 
