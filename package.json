@@ -11,7 +11,7 @@
 	],
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/Automattic/wpwebmcp.git"
+		"url": "git+https://github.com/galatanovidiu/webmcp-adapter.git"
 	},
 	"engines": {
 		"node": ">=22"
@@ -19,6 +19,7 @@
 	"scripts": {
 		"plugin-zip": "wp-scripts plugin-zip",
 		"format": "wp-scripts format",
+		"test": "node --test tools/*.test.mjs",
 		"wp-env": "wp-env"
 	},
 	"devDependencies": {

@@ -14,11 +14,13 @@ test('stepOk: editor write refusal ({inserted:false, reason}) is a failure', () 
 
 test('stepOk: declined confirmation ({cancelled:true}) is a failure', () => {
   assert.equal(stepOk({ result: '{"cancelled":true}' }), false);
+  assert.equal(stepOk({ result: { cancelled: true } }), false);
 });
 
 test('stepOk: successful write ({inserted:true, tree}) is ok', () => {
   assert.equal(stepOk({ result: '{"inserted":true,"tree":[]}' }), true);
   assert.equal(stepOk({ result: '{"saved":true,"postId":23,"status":"draft"}' }), true);
+  assert.equal(stepOk({ result: { inserted: true, tree: [] } }), true);
 });
 
 test('stepOk: a legit false field without a reason is not a failure', () => {

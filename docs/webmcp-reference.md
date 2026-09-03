@@ -5,6 +5,7 @@ Consolidated reference for WebMCP, built from the Chrome for Developers docs and
 WordPress administration (wp-admin).
 
 Sources (canonical, check for updates):
+- Codex Site tools: https://learn.chatgpt.com/docs/webmcp
 - Overview: https://developer.chrome.com/docs/ai/webmcp
 - Imperative API: https://developer.chrome.com/docs/ai/webmcp/imperative-api
 - Declarative API: https://developer.chrome.com/docs/ai/webmcp/declarative-api
@@ -16,14 +17,18 @@ Sources (canonical, check for updates):
 - Demos + dev tools: https://github.com/GoogleChromeLabs/webmcp-tools
 - Tool Inspector (Chrome extension): https://chromewebstore.google.com/detail/model-context-tool-inspec/gbpdfapgefenggkahomfgkhfehlcenpd
 
-## Status and version notes
+## Status and client notes
 
-- Proposed web standard. Not an official Google product.
-- Dev flag: `chrome://flags/#enable-webmcp-testing`.
-- Origin trial planned for Chrome 149.
-- IMPORTANT: `navigator.modelContext` is DEPRECATED in Chrome 150. Use `document.modelContext`.
-  Feature-detect with `document.modelContext || navigator.modelContext` for older builds.
-- Requires an active browser context. No headless operation. Tools are tab-bound and ephemeral.
+- WebMCP is a proposed web standard.
+- Codex and ChatGPT Work can use imperative WebMCP tools as **Site tools** in the
+  ChatGPT desktop app's built-in browser. Current availability requires a supported
+  model, app version, workspace, and rollout; check the OpenAI page above.
+- Codex currently ignores declarative form tools and iframe registrations.
+- Current Chrome development builds use the `WebMCP` feature; older Chrome 149
+  testing used `WebMCPTesting` and `DevToolsWebMCPSupport`.
+- Prefer `document.modelContext`. Feature-detect
+  `document.modelContext || navigator.modelContext` for older Chrome builds.
+- Tools are document-bound and ephemeral.
 
 ## What WebMCP is
 
@@ -50,8 +55,8 @@ document.modelContext.registerTool({
     required: ['field'],
   },
   execute: async (params) => {
-    // run the real page logic; return a string the agent reads back
-    return 'result text';
+    // Run the real page logic; return a JSON-serializable value.
+    return { ok: true };
   },
   annotations: {
     readOnlyHint: boolean,        // tool does not mutate state
@@ -63,9 +68,10 @@ document.modelContext.registerTool({
 });
 ```
 
-Tool definition fields: `name`, `description`, `inputSchema` (JSON Schema: `type`,
-`properties`, `enum`, `required`, `minimum`, `integer`, etc.), `execute(args)` returning
-a string, optional `annotations`.
+Tool definition fields: `name`, optional `title`, `description`, `inputSchema` (JSON
+Schema: `type`, `properties`, `enum`, `required`, `minimum`, `integer`, etc.),
+`execute(args, context)` returning any JSON-serializable value, and optional
+`annotations`.
 
 ### Other operations
 
@@ -73,14 +79,14 @@ a string, optional `annotations`.
 // Discover tools (optionally limited to origins)
 const tools = await document.modelContext.getTools({ fromOrigins: ['https://partner.org'] });
 
-// Execute a tool; args passed as a JSON string
-const result = await document.modelContext.executeTool(tool, '{"param":"value"}', { signal });
+// Execute a tool; args passed as an object
+const result = await document.modelContext.executeTool(tool, { param: 'value' }, { signal });
 
 // React to changes in the registered tool set
 document.modelContext.addEventListener('toolchange', (event) => { /* ... */ });
 ```
 
-### Cross-origin
+### Cross-origin (broader WebMCP API, not Codex Site tools)
 
 Two conditions, both required:
 1. Host page delegates via Permissions Policy: `<iframe allow="tools"></iframe>`.
@@ -88,7 +94,7 @@ Two conditions, both required:
 
 The `tools` Permissions Policy defaults to `self`.
 
-## Declarative API
+## Declarative API (not currently discovered by Codex)
 
 Annotate a standard `<form>` so the browser turns it into a tool. No JS registration.
 
@@ -214,19 +220,17 @@ End-to-end journeys support ordered and `unordered` call sets. CLI:
 - Declarative: `french-bistro` (Le Petit Bistro).
 - `shared/types` holds shared TypeScript type definitions.
 
-## Notes for WordPress administration (verified)
+## Notes for WordPress administration
 
-The approach is now decided and verified. See [architecture.md](architecture.md) for the
-full design and [development.md](development.md) for setup and testing. Summary:
+See [architecture.md](architecture.md) for the project boundary and
+[development.md](development.md) for verification. Summary:
 
-- WordPress 7.0 ships the Abilities API in core. It is the canonical capability registry.
-  We bridge it to WebMCP rather than building a separate tool system.
-- The plugin (`webmcp-adapter`) enqueues one script module on wp-admin. It reads the
-  client ability store (`@wordpress/abilities` + `@wordpress/core-abilities`) and
-  registers each ability as a WebMCP tool via the imperative API.
-- The store populates asynchronously and imperatively (no resolver). The adapter must
-  **subscribe** to the store, not `await getAbilities()` — see architecture.md.
-- Chrome 149 still exposes `navigator.modelContext`; `document.modelContext` lands in
-  Chrome 150. The adapter feature-detects `document.modelContext || navigator.modelContext`.
-- The server-side `wp-ai-agent` Tool layer overlaps with abilities. Decision: treat the
-  Abilities API as the one registry; do not wire WebMCP to that layer directly.
+- The plugin registers frontend editor abilities in the WordPress Abilities client
+  store and projects only records marked `clientRegistered` without
+  `serverRegistered` provenance.
+- It does not import `@wordpress/core-abilities` or project REST-backed abilities.
+- Registration occurs in the top-level wp-admin shell, including on the Site Editor.
+- The adapter subscribes for late frontend registrations and waits for each
+  `registerTool()` promise before treating the ability as registered.
+- `execute` returns structured ability results and observes the invocation's
+  cancellation signal when the client supplies it to the callback.

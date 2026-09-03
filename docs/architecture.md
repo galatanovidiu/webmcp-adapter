@@ -1,284 +1,197 @@
-# Architecture — Abilities to WebMCP
+# Architecture — frontend abilities to WebMCP
 
-How `wpwebmcp` exposes WordPress administration to in-browser AI agents, and why it
-is built this way. For the WebMCP API itself, see [webmcp-reference.md](webmcp-reference.md).
-For setup and testing, see [development.md](development.md).
+This plugin exposes the live WordPress editor to browser AI agents without turning
+the page into a second backend API.
 
-## The decision: bridge an existing registry, do not build a new one
+## Boundary
 
-WordPress 7.0 (released 20 May 2026) ships the **Abilities API** in core. It is the
-canonical, machine-readable registry of site capabilities. We do not invent a tool
-system. We map that registry to the browser.
+WordPress 7.0's `@wordpress/abilities` module provides one client-side registry.
+Abilities in that registry carry provenance annotations:
 
-The layers, server to browser:
+- `clientRegistered: true` — browser-owned callbacks.
+- `serverRegistered: true` — REST-backed callbacks loaded from PHP abilities.
 
-| Layer | What it is | Consumer |
+The adapter projects only abilities marked `clientRegistered: true` and rejects
+any record also marked `serverRegistered: true`. It does not import
+`@wordpress/core-abilities`, fetch `/wp-abilities/v1/abilities`, or expose backend
+catalog abilities.
+
+That boundary is deliberate:
+
+- frontend tools operate on the open tab and live editor state;
+- server operations belong on REST or a server-side MCP adapter;
+- in local Codex acceptance testing, projecting the backend catalog produced 121
+  tools and the page configuration was rejected; OpenAI publishes no numeric limit;
+- editor writes remain visible and reversible before persistence.
+
+If another plugin loads server abilities into the shared client store, the provenance
+check still excludes them.
+
+## Runtime path
+
+The plugin enqueues [`src/adapter.js`](../src/adapter.js) as a script module on the
+top-level wp-admin document. The module:
+
+1. Imports `@wordpress/abilities`.
+2. Imports [`src/abilities/index.js`](../src/abilities/index.js), which registers
+   this plugin's frontend category and abilities.
+3. Feature-detects `document.modelContext`, with `navigator.modelContext` as the
+   Chrome 149 fallback.
+4. Reads the ability store, filters by provenance and the exposure gates, and calls
+   `registerTool()`.
+5. Subscribes to the store for frontend abilities registered later.
+
+The subscription remains important even though this plugin's own imports are ready
+before the adapter body runs. Other frontend modules may register abilities after
+initial paint. Registration is tracked as pending until its promise resolves; failures
+are reported and remain retryable on a later store update.
+
+Ability → WebMCP mapping:
+
+| Ability field | WebMCP field | Note |
 |---|---|---|
-| Abilities API (PHP) | Central registry. `wp_register_ability()` on `wp_abilities_api_init` | source of truth |
-| REST `/wp-abilities/v1/` | Abilities over HTTP (`/abilities`, `/abilities/{name}/run`) | JS, external clients |
-| `@wordpress/abilities` (JS module) | Client store: `getAbilities`, `executeAbility`, `registerAbility`, `store` | browser code |
-| `@wordpress/core-abilities` (JS module) | Fetches server abilities over REST, registers them into the client store | browser code |
-| MCP Adapter (PHP plugin, separate) | Bridges abilities → MCP protocol | external agents (Claude Desktop, Cursor) |
-| **webmcp-adapter (this plugin)** | Bridges the client ability store → WebMCP `modelContext` | in-tab Chrome agent |
+| `name` | `name` | `/` becomes `-` |
+| `label` | `title` | Human-readable browser UI label |
+| `description` | `description` | Destructive tools receive a confirmation notice |
+| `input_schema` | `inputSchema` | Empty/list-shaped schemas are normalized |
+| `annotations.readonly` | `annotations.readOnlyHint` | |
+| frontend callback | `execute(params, { signal })` | Structured results are returned directly |
 
-The first four are official core. The MCP Adapter covers external agents. Our plugin
-fills the remaining gap: the in-browser agent.
+Every registered definition sets `untrustedContentHint` to true because editor titles, content, patterns, and
+other site data can contain user-authored text.
 
-The dependency runs one way. This adapter is generic — it exposes whatever abilities are
-registered in the client store and does nothing on its own. It therefore **depends on an
-abilities source** to have tools worth exposing; the
-[abilities-catalog](https://github.com/galatanovidiu/abilities-catalog) plugin provides the
-core wp-admin ability set this project is built around. The reverse is not true:
-abilities-catalog is a standalone, consumer-agnostic registrar and does not require this
-adapter (a server-side MCP consumer, or none, works just as well).
+## Codex Site tools contract
 
-Existing community bridges (`code-atlantic/webmcp-abilities`, the `webmcp-bridge`
-plugin) target the deprecated `navigator.modelContext`. We feature-detect
-`document.modelContext` first, so we stay correct on Chrome 150+.
+Codex discovers imperative WebMCP tools from the top-level document in the ChatGPT
+desktop app's built-in browser. It currently does not discover declarative form tools
+or tools registered inside iframes.
 
-## How the adapter works
+The adapter therefore registers on the wp-admin shell. The Site Editor canvas can
+remain in an iframe because the tools and `window.wp.data` stores used by the adapter
+live in the top-level application.
 
-The plugin enqueues one script module on wp-admin pages
-([src/adapter.js](../src/adapter.js)). It depends on
-`@wordpress/abilities` and `@wordpress/core-abilities`. The adapter:
+Registrations are document-bound. A navigation or reload invalidates old tool handles;
+the agent must discover the new document's tools.
 
-1. Feature-detects `document.modelContext || navigator.modelContext`.
-2. Reads abilities from the client store and registers each as a WebMCP tool.
-3. Subscribes to the store and registers any ability it has not seen yet.
+The frontend-only inventory is intentionally small:
 
-Field mapping, ability → WebMCP tool:
+- 7 tools with default read-only settings;
+- 15 when non-destructive editor writes are enabled;
+- 16 when the separately gated `save-post` tool is also enabled.
 
-| Ability field | WebMCP tool field | Note |
-|---|---|---|
-| `name` (`namespace/name`) | `name` (`namespace-name`) | `/` is not allowed in tool names |
-| `description` (fallback `label`) | `description` | |
-| `input_schema` | `inputSchema` | JSON Schema passes through as-is |
-| `meta.annotations.readonly` | `annotations.readOnlyHint` | |
-| `executeAbility(name, params)` | `execute(params)` | result stringified for the agent |
+## Frontend editor abilities
 
-### Frontend abilities (client-side, no server)
+The callbacks read and write Gutenberg data stores through `window.wp.data` and
+`window.wp.blocks` at call time. Changes land in the editor the user is watching.
+They do not silently update the database.
 
-Abilities come from two sources, both in the **same** client store, so the adapter treats
-them identically:
+Read tools:
 
-- **Server abilities** — `@wordpress/core-abilities` fetches them over REST; each gets a
-  `callback` that POSTs to `/wp-abilities/v1/abilities/{name}/run`. The server enforces the
-  `permission_callback` capability there.
-- **Frontend abilities** — registered in the browser under [src/abilities/](../src/abilities/)
-  via `registerAbility({ ..., callback })`. The `callback` is plain JS that runs in the page;
-  `executeAbility` invokes it directly, **no REST**. The adapter picks them up through the
-  same subscribe path and applies the same write gate, confirmation modal, and activity log.
+- `editor-context` describes the open document, save state, permalink, undo state,
+  and the user's current block/text selection.
+- `read-blocks` returns the live block tree and targeting `clientId` values.
+- `list-block-types` returns the installed block schemas and design supports.
+- `get-theme-design-tokens` returns theme presets.
+- `list-patterns` returns available block patterns.
+- `list-templates` returns templates and template parts with edit URLs.
+- `navigate` moves the current tab to a same-origin location.
 
-`src/abilities/index.js` is the barrel: it imports `category.js` first (registerAbility
-rejects an ability whose category is not already registered), then one file per ability.
-`adapter.js` imports the barrel once; adding an ability touches only `src/abilities/`.
+Write tools:
 
-**Security limit:** a frontend callback runs with the user's session and has **no server-side
-capability check** (the client `permissionCallback` is not a trust boundary — page script can
-bypass it). So frontend abilities may only do what page JS can already do — navigate, touch
-the DOM, call REST the user is already authorized for. `webmcp/navigate` is the first one: it
-moves the tab to a same-origin URL and refuses off-site targets.
+- `insert-blocks`
+- `update-block-attributes`
+- `insert-pattern`
+- `remove-blocks`
+- `move-blocks`
+- `replace-blocks`
+- `edit-post-attributes`
+- `undo`
 
-### Gutenberg editor abilities: composing pages live
+These stage unsaved changes and form the editor's reversible working set.
+`edit-post-attributes` rejects `status` so a non-destructive call cannot arm a later
+save into publishing.
 
-The largest use of frontend abilities is editing the **open block editor** the user is
-watching. A callback reads and writes the editor data stores through `window.wp.data` and
-`window.wp.blocks` at call time, so a change lands in the editor **live and unsaved** — the
-user sees it and can undo (Ctrl+Z) or Save. This is why they are frontend, not server: the
-server `og-content-update-page` ability persists to the database, would not appear in the open
-editor, and could silently overwrite the user's unsaved edits. Rule: when an editor is open,
-edit through these live abilities, not the server content abilities.
+`save-post` is the one destructive-tier tool. It persists the staged editor state,
+and its optional `status` argument owns the explicit publish flow.
 
-**One generic set, not one tool per block.** WordPress registers ~109 core block types, but
-they all share one shape — `{ name, attributes, innerBlocks }` — and `wp.blocks.createBlock`
-is recursive, so a block tree *is* the insert spec. One ability per block would flood the
-agent with ~109 near-duplicate schemas; instead the adapter ships a small block-agnostic set
-that works for every block, with discovery moved from static schemas to runtime reads:
+The set is generic over block types. WordPress blocks share the recursive
+`{ name, attributes, innerBlocks }` shape, so the adapter discovers block contracts
+at runtime instead of registering one WebMCP tool per block.
 
-- **Reads (always exposed):** `webmcp/editor-context` (what is open, document state —
-  dirty/saveable/published/permalink — and the human's live SELECTION: when the user says
-  "this", the selected blocks are what they mean), `webmcp/read-blocks` (the live block tree
-  with `clientId`s — the target of every write; a `names` targeting mode returns a flat match
-  list, `attributeKeys` projects, and a block that failed markup validation carries
-  `isValid:false`), `webmcp/list-block-types` (each block's attribute contract + design
-  `supports`), `webmcp/get-theme-design-tokens` (theme preset slugs, so output stays
-  on-brand), `webmcp/list-patterns` (designed sections), `webmcp/list-templates` (templates +
-  template parts with Site Editor edit URLs; the slugs feed `edit-post-attributes`).
-- **Writes (behind `webmcp_enable_write_tools`):** `webmcp/insert-blocks` (build a nested
-  section from a recursive spec; returns the created `clientId` tree),
-  `webmcp/update-block-attributes` (deep-merge an attribute patch by `clientId`; per-block
-  `updates` batch and `unset` dot-paths, dispatched ONCE so one call is one undo step),
-  `webmcp/insert-pattern` (drop a theme-designed section), `webmcp/remove-blocks`,
-  `webmcp/move-blocks` (reorder/reparent preserving `clientId`s), `webmcp/replace-blocks`
-  (atomic swap; `transformTo` runs the registered block transforms, including
-  group/ungroup), `webmcp/edit-post-attributes` (the document sidebar: title, slug, excerpt,
-  featured image, template, terms, meta — it REJECTS `status`), and `webmcp/undo` (step the
-  shared history; the write set's recovery half). All of these stage **unsaved** edits —
-  nothing touches the database, so none are destructive-tier.
-- **The one destructive-tier exception:** `webmcp/save-post` persists the staged edits, and
-  its optional `status` arg is the real publish flow (core's publish button is exactly
-  `editPost({status},{undoIgnore:true})` + `savePost()`). It is `destructive: true` even for
-  a plain save — saving an already-published post updates the live page — so it sits behind
-  the write + destructive settings AND the isTrusted confirmation modal, where the human sees
-  `status:"publish"` in the args before approving. This is also why `edit-post-attributes`
-  rejects `status`: the modal shows a call's args, not accumulated prior edits, so a
-  write-tier status flip would arm the human's next innocent-looking confirmed save into a
-  silent publish (on a failed save, `save-post` reverts its own staged flip for the same
-  reason).
+## Editor implementation constraints
 
-The shared editor guard and the spec build/snapshot helpers live in
-[src/abilities/store.js](../src/abilities/store.js) (`getEditor()` et al. — helpers, not
-abilities; the barrel does not import it). Client-API gotchas that shaped the code: theme
-token presets are flat arrays for some keys but `{default, theme}` objects for
-`fontFamilies`/`spacingSizes` (version-dependent); patterns and templates need
-`resolveSelect('core')`, not `select` (async resolvers — the `wp_template` entity config even
-loads lazily); `updateBlockAttributes` shallow-merges (so the ability deep-merges `style`
-itself, dispatches ONCE with `uniqueByBlock:true` for a single undo step, and unsets a
-top-level key by dispatching an explicit `undefined` — the reducer spreads the patch, so
-omission keeps the old value); `insertBlocks`, `removeBlocks`, `moveBlocksToPosition`, and
-`replaceBlocks` all fail **silently** when refused (`templateLock`/`allowedBlocks`/locks), so
-every write re-reads after dispatch to report the real outcome; and `switchToBlockType`
-returns `null` when no transform matches, so `replace-blocks` answers with the possible
-targets instead.
+Shared guards and block-spec helpers live in
+[`src/abilities/store.js`](../src/abilities/store.js).
 
-Two scope notes. First, the whole set works in the **Site Editor** unchanged: `edit-site`
-initializes the unified `core/editor` store into the default `wp.data` registry
-(`useSubRegistry:false`) and the adapter enqueues on `site-editor.php`, so
-`getCurrentPostId()` is truthy there (a string id like `"theme//slug"`) and every tool
-operates on the open template or template part. Second, **media is the catalog's job**:
-`og-media/list-media`, `upload-media`, `update-media`, and `set-featured-image` already flow
-through the same store → tool path with real server-side capability checks, so this adapter
-ships no duplicate frontend media layer — wire an uploaded image into a block with
-`update-block-attributes` (`{url, id, alt}`).
+Important runtime details:
 
-## The critical gotcha: the store populates asynchronously and imperatively
+- Block `clientId` values change when the editor reparses content. Read immediately
+  before a targeted update, move, replace, or removal.
+- `updateBlockAttributes` shallow-merges. The ability deep-merges nested style
+  patches and dispatches a batch once so one call is one undo step.
+- Block-editor mutation actions can fail silently under template locks, block locks,
+  or `allowedBlocks`. Every write re-reads state and reports the observed outcome.
+- Patterns and templates use asynchronous selectors.
+- Theme preset containers vary across WordPress versions; the token tool normalizes
+  the supported shapes.
+- `switchToBlockType` can return no transform; the replace tool reports available
+  alternatives instead of pretending it succeeded.
+- Media upload and library management are not part of this frontend-only adapter.
 
-`@wordpress/core-abilities` fetches `/wp-abilities/v1/abilities` once over REST, then
-calls `registerAbility()` for each result. The abilities data store has **no resolver**
-for `getAbilities`.
+## Exposure and confirmation
 
-So on first paint the store is empty, and:
+Two default-off settings control mutation:
 
-- `await getAbilities()` returns the empty cache. It does not wait.
-- `wp.data.resolveSelect(store).getAbilities()` also returns empty — there is no
-  resolver to await.
+| Setting | Effect |
+|---|---|
+| `webmcp_enable_write_tools` | Exposes the eight unsaved editor write tools |
+| `webmcp_enable_destructive_tools` | With writes enabled, exposes `save-post` |
 
-The only correct pattern is **subscribe**: read what is present, then
-`wp.data.subscribe(sync, store)` and register each new ability as it arrives. This was
-the bug that made the first version register zero tools. It is only visible on a cold
-page load; a warm store hides it.
+The adapter reads these flags once from script-module data. Missing or invalid values
+fail closed.
 
-## Verified facts (WordPress 7.0 + Chrome 149)
+Every `save-post` call opens an in-page confirmation that shows the tool and exact
+arguments. The default accept path requires `event.isTrusted`, which blocks synthetic
+clicks dispatched by page script. A privileged browser automation channel can produce
+trusted clicks and is outside that page-level defense.
 
-- Three core abilities exist server-side: `core/get-site-info`,
-  `core/get-environment-info`, `core/get-user-info`. Only the first two are exposed to
-  the client store; `core/get-user-info` is not.
-- The adapter registers both exposed abilities as tools and they execute successfully
-  (e.g. `core-get-site-info` returns the live site info object).
-- Chrome 149 exposes `navigator.modelContext` (live) and `navigator.modelContextTesting`
-  (`listTools`, `executeTool`). `document.modelContext` arrives in Chrome 150.
+A default-off demo setting can intentionally relax the trusted-click requirement. A
+persistent admin warning and modal marker remain visible while it is enabled.
 
-## Write-gating mechanism (how the adapter enforces the catalog's classification)
+When a browser supplies the WebMCP callback signal, it is observed before
+confirmation, during a pending modal, and immediately before the ability callback.
+Cancellation then removes the modal and prevents a late confirmation from executing
+an abandoned call. Current clients may cancel the outer invocation without forwarding
+that signal; the page cannot infer an undisclosed cancellation.
+Pending confirmation dialogs also expire to a safe decline after 60 seconds, so an
+outer cancellation that is not forwarded cannot leave an indefinitely actionable modal.
 
-The abilities-catalog classifies every ability (`readonly`, `destructive`, `idempotent`, and a
-`dangerous` marker) and states the *principle* that a consumer must gate writes. This adapter is
-that gate for the in-browser agent. WebMCP has no built-in confirmation, and the only standard
-tool annotations a browser agent consumes are `readOnlyHint` and `untrustedContentHint` — there
-is no agent-consumed "destructive" hint. So write safety is enforced here, in the adapter, as a
-layered exposure gate. Capability (`permission_callback`) stays the hard server-side guard
-underneath all of it.
+The ChatGPT built-in browser also performs its own safety review. That product review,
+the plugin's exposure gates, and the in-page confirmation are separate layers.
 
-**Three default-OFF settings + a per-ability opt-in** ([includes/Settings.php](../includes/Settings.php)):
+## Frontend security boundary
 
-| Setting / option | Default | Gate it opens |
-|---|---|---|
-| `webmcp_enable_write_tools` | off | exposes non-destructive write tools |
-| `webmcp_enable_destructive_tools` | off | with the write setting, exposes destructive write tools |
-| `webmcp_enable_dangerous_tools` | off | with the two above, exposes dangerous (T3) tools |
-| `webmcp_dangerous_tools_optin` | empty | per-ability allow-list for dangerous tools (a dangerous tool exposes only if individually opted in) |
+A frontend callback has no independent server-side capability check. It may only do
+what the current page can already do and must validate its current editor context
+before mutating it.
 
-Exposure rules the adapter applies when reading the client store (the "Option B" filter — opt-in
-write exposure, one policy with no per-domain logic):
+This is why the adapter no longer projects REST-backed abilities. Backend authorization
+belongs at the backend operation, not in a generic page bridge.
 
-- **Read** tools are always exposed (mapped `readonly → readOnlyHint`).
-- **Write** tools expose only when `webmcp_enable_write_tools` is on.
-- **Destructive** writes expose only when BOTH the write and destructive settings are on, and each
-  call shows the in-page confirmation modal (below).
-- **Dangerous** (T3) tools expose only when all three settings are on AND the tool is in the
-  per-ability opt-in, and each call shows the same modal.
+## Activity
 
-**Gate dangerous tools by NAME, not by annotation.** The `@wordpress/abilities` client store
-strips custom annotation keys — it keeps only `readonly`/`destructive`/`idempotent`, so the
-adapter cannot read `annotations.dangerous` client-side. Instead the adapter applies a
-`webmcp_dangerous_tools` filter server-side
-([Settings.php](../includes/Settings.php) → `apply_filters('webmcp_dangerous_tools', [])`); the
-abilities-catalog Registry contributes its dangerous ability names into that filter. The adapter
-ships the resulting list to the page as `dangerousToolNames`
-([Plugin.php](../includes/Plugin.php)), and [src/adapter.js](../src/adapter.js) reads it into
-`DANGEROUS_NAMES` and gates each tool by name. The dependency direction holds: the hook is the
-adapter's; the catalog optionally populates it. Without the catalog the list is simply empty.
+Every completed, failed, declined, or expired tool call appears in an in-page activity panel.
+The adapter also sends an audit-only record to `/webmcp/v1/activity`. Server recording
+is fire-and-forget and cannot alter the tool result. Parameters are redacted before
+storage, retention is bounded, and administrators can review runs under
+**Tools → Agent activity**.
 
-## Confirmation threat model and limits (the destructive/dangerous modal)
+## Verification
 
-Destructive and dangerous tools pop an in-page confirmation modal
-(`webmcp-adapter/src/adapter.js` → `confirmDestructive`) before they run. The modal's
-accept path is **human-only against the in-page agent by default**, with a deliberate,
-default-OFF demo bypass. Be precise about what this guards:
+The primary acceptance test uses Codex's built-in browser against a direct localhost
+wp-admin page. System Chrome drivers exercise the standard
+`document.modelContext.getTools()/executeTool(tool, inputObject)` path. They detect
+the input shape once with a harmless read for transitional builds, while the older
+JSON-string `modelContextTesting` hook remains a compatibility fallback.
 
-- **Defended by default.** The confirm-accept click is gated on `event.isTrusted`. A
-  synthetic, script-dispatched click (`element.click()`, `dispatchEvent`) has
-  `isTrusted === false` and is rejected, so the in-page WebMCP agent
-  (`navigator.modelContext`) cannot self-approve its own destructive action. The
-  Promise that resolves the modal is closure-scoped and unreachable from page script.
-- **Relaxed by an explicit human toggle.** The `webmcp_allow_automated_confirmation`
-  admin setting (default OFF, `manage_options` only — the agent cannot flip it) drops the
-  `isTrusted` check so a script can confirm automatically. This exists for demos /
-  proof-of-concept recordings, NOT production. While it is on, a persistent admin notice
-  warns the operator and the modal shows an "Automated confirmation enabled" marker; the
-  destructive tool descriptions also tell the agent the live mode.
-- **NOT defended (out of scope).** A click injected over the Chrome DevTools Protocol
-  (`Input.dispatchMouseEvent`) has `isTrusted === true` and passes the gate. A fully
-  CDP-controlled or otherwise compromised browser already owns the user's whole session,
-  so no in-page channel can stop it; this is accepted, not a regression. The WebMCP
-  testing API (`navigator.modelContextTesting`) is a developer affordance and is treated
-  the same way — if it confirms via trusted events it is not covered by `isTrusted`.
-
-The hard guards underneath remain capability (`permission_callback`) + the three
-default-OFF exposure settings + the per-ability dangerous opt-in. The modal is a
-self-approval guard, not the authorization boundary.
-
-**Known follow-up (security risk):** telling the agent the confirmation mode via the tool
-description, and relying on the agent to honor it, is advisory only — a non-compliant
-agent can ignore it. Accepted for this proof of concept; tracked in the backlog.
-
-## Status and next steps
-
-Current version: **v0.12.0**.
-
-Done (all verified end-to-end in Chrome 149):
-- Local WP 7.0 install, Abilities API confirmed, plugin active.
-- Read tools registered from the client store, including late arrivals via the subscribe
-  path.
-- Frontend abilities driving the live block editor: `navigate` and `editor-context`, plus a
-  generic block-CRUD + patterns set (`read-blocks`, `list-block-types`,
-  `get-theme-design-tokens`, `list-patterns`, `insert-blocks`, `update-block-attributes`,
-  `insert-pattern`, `remove-blocks`). Verified by building a hero + features + CTA landing
-  page from the tools alone.
-- Full write gate: three default-OFF settings (write / destructive / dangerous) plus the
-  per-ability dangerous opt-in, gating dangerous tools by name. Write, destructive, and
-  dangerous tiers all exercised.
-- Confirmation modal for destructive/dangerous calls, gated on `event.isTrusted`, with the
-  default-OFF `webmcp_allow_automated_confirmation` demo bypass.
-- Activity log: in-page panel plus server-side persistence to `{prefix}webmcp_activity` and
-  a **Tools → Agent activity** review screen. `ActivityRedactor` scrubs secrets before
-  storage.
-- `tools/webmcp.mjs` CLI for driving the registered tools from a script.
-
-Open:
-- **Advisory confirmation mode (security risk).** Telling the agent the confirmation mode
-  via the tool description and relying on it to comply is advisory only; a non-compliant
-  agent, or a click injected over the Chrome DevTools Protocol, bypasses the human-only
-  gate. Accepted for this proof of concept; tracked in the backlog.
-- Decide front-end (non-admin) exposure. Currently admin-only by design.
-- Relationship to the server-side `wp-ai-agent` Tool layer: treat abilities as the one
-  registry; do not wire WebMCP to that layer directly.
+See [development.md](development.md) for the exact checks.

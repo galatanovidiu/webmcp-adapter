@@ -9,10 +9,6 @@
 	"steps": [
 		{
 			"step": "activatePlugin",
-			"pluginPath": "abilities-catalog/abilities-catalog.php"
-		},
-		{
-			"step": "activatePlugin",
 			"pluginPath": "webmcp-adapter/webmcp-adapter.php"
 		}
 	]

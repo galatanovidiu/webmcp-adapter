@@ -12,7 +12,7 @@
  *                                                in it ready, e.g.
  *                                                setup "/wp-admin/post-new.php?post_type=post"
  *   node webmcp.mjs check [adminPath]            ensure + browse to wp-admin, then REPORT state
- *                                                for an EXTERNAL site: logged in? both plugins
+ *                                                for an EXTERNAL site: logged in? adapter
  *                                                active? tools present? + what to do next. Does
  *                                                NOT fill credentials — you log in by hand in the
  *                                                opened Chrome. Re-run after logging in/installing.
@@ -27,7 +27,7 @@
  * Configuration (all optional, sensible defaults):
  *   CDP_PORT=9222            Chrome remote-debugging port
  *   WP_URL=http://localhost:8080
- *   WP_USER=admin  WP_PASS=admin
+ *   WP_USER=admin  WP_PASS=password
  *   CHROME_BIN=...           Chrome executable (auto-detected per platform)
  *   CHROME_PROFILE=...       throwaway user-data-dir (default: <tmp>/wpwebmcp-chrome-profile)
  */
@@ -41,7 +41,7 @@ import { pathToFileURL } from 'node:url';
 const PORT = process.env.CDP_PORT || '9222';
 const WP_URL = process.env.WP_URL || 'http://localhost:8080';
 const WP_USER = process.env.WP_USER || 'admin';
-const WP_PASS = process.env.WP_PASS || 'admin';
+const WP_PASS = process.env.WP_PASS || 'password';
 const CHROME_BIN = process.env.CHROME_BIN || defaultChrome();
 const CHROME_PROFILE = process.env.CHROME_PROFILE || path.join(os.tmpdir(), 'wpwebmcp-chrome-profile');
 const BASE = `http://localhost:${PORT}`;
@@ -74,7 +74,7 @@ async function ensureChrome() {
   const child = spawn(CHROME_BIN, [
     `--remote-debugging-port=${PORT}`,
     `--user-data-dir=${CHROME_PROFILE}`,
-    '--enable-features=WebMCPTesting,DevToolsWebMCPSupport',
+    '--enable-features=WebMCP,WebMCPTesting,DevToolsWebMCPSupport',
     '--no-first-run', '--no-default-browser-check', 'about:blank',
   ], { detached: true, stdio: 'ignore' });
   child.unref();
@@ -135,17 +135,60 @@ async function navigate(cdp, url) {
   for (let i = 0; i < 80; i++) { await sleep(250); if (await evaluate(cdp, 'document.readyState') === 'complete') return; }
 }
 
-const TESTING = `(navigator.modelContextTesting || document.modelContextTesting)`;
+const LIST_TOOLS = `(async () => {
+  const normalize = (tool) => {
+    let inputSchema = tool.inputSchema;
+    if (typeof inputSchema === 'string') {
+      try { inputSchema = JSON.parse(inputSchema); } catch {}
+    }
+    return {
+      name: tool.name,
+      ...(tool.title ? { title: tool.title } : {}),
+      description: tool.description,
+      inputSchema,
+      annotations: tool.annotations,
+    };
+  };
+  if (typeof document.modelContext?.getTools === 'function') {
+    return (await document.modelContext.getTools())
+      .filter((tool) => tool.window === window)
+      .map(normalize);
+  }
+  const legacy = navigator.modelContextTesting || document.modelContextTesting;
+  return legacy ? (await legacy.listTools()).map(normalize) : [];
+})()`;
 
-/** Poll the WebMCP testing hook until it reports tools (or we give up). */
+/** Poll until two consecutive non-empty top-level tool inventories match. */
 async function waitForTools(cdp, tries = 16) {
   let tools = [];
+  let previous = '';
   for (let i = 0; i < tries; i++) {
     await sleep(500);
-    tools = await evaluate(cdp, `(async () => { const t = ${TESTING}; return t ? (await t.listTools()).map(x=>x.name) : []; })()`, true);
-    if (tools.length) break;
+    tools = await evaluate(cdp, `${LIST_TOOLS}.then((items) => items.map((item) => item.name))`, true);
+    const current = tools.length ? JSON.stringify([...tools].sort()) : '';
+    if (current && current === previous) break;
+    previous = current;
   }
   return tools;
+}
+
+/** Detect the standard API input shape once using a harmless frontend read. */
+async function detectInputMode(cdp) {
+  return evaluate(cdp, `(async () => {
+    if (typeof document.modelContext?.executeTool !== 'function') return 'legacy';
+    if (window.__webmcpInputMode) return window.__webmcpInputMode;
+    const probe = (await document.modelContext.getTools())
+      .find((tool) => tool.window === window && tool.name === 'webmcp-editor-context');
+    if (!probe) throw new Error('The frontend read probe webmcp-editor-context is unavailable.');
+    try {
+      await document.modelContext.executeTool(probe, {});
+      return (window.__webmcpInputMode = 'object');
+    } catch (error) {
+      if (!/^UnknownError: Failed to parse input arguments\\.?$/i.test(String(error))) throw error;
+      await document.modelContext.executeTool(probe, '{}');
+      return (window.__webmcpInputMode = 'string');
+    }
+  })()`, true);
 }
 
 /**
@@ -195,25 +238,23 @@ async function cmdSetup(adminPath) {
     await sleep(1500);
     await navigate(cdp, dest);
     const tools = await waitForTools(cdp);
+    const inputMode = tools.length ? await detectInputMode(cdp) : null;
     const editorSettled = await waitEditorSettled(cdp);
-    return { ok: true, url: await evaluate(cdp, 'location.href'), tools, editorSettled };
+    return { ok: tools.length > 0, url: await evaluate(cdp, 'location.href'), tools, inputMode, editorSettled };
   });
 }
 
-// The two plugins an external site needs for the tools to appear: this adapter,
-// plus an abilities source (the catalog) that actually registers abilities.
-// slug = the plugin folder (the top-level dir in each release zip). GitHub has
-// no install-from-URL in wp-admin, so remediation is upload-the-zip or WP-CLI.
+// The plugin an external site needs for the frontend tools to appear. `slug` is
+// the plugin folder (the top-level dir in the release zip). GitHub has no
+// install-from-URL in wp-admin, so remediation is upload-the-zip or WP-CLI.
 const REQUIRED_PLUGINS = [
   { key: 'adapter', slug: 'webmcp-adapter', label: 'WebMCP Adapter',
     zip: 'https://github.com/galatanovidiu/webmcp-adapter/releases/latest/download/webmcp-adapter.zip' },
-  { key: 'abilitiesSource', slug: 'abilities-catalog', label: 'Abilities Catalog (tools source)',
-    zip: 'https://github.com/galatanovidiu/abilities-catalog/releases/latest/download/abilities-catalog.zip' },
 ];
 
 // Preflight an EXTERNAL (non-wp-env) site: browse to wp-admin, report whether
-// the human is logged in (manual login — no password in env), whether both
-// plugins are active, and whether tools appeared. Unlike setup, it never fills
+// the human is logged in (manual login — no password in env), whether the
+// plugin is active, and whether tools appeared. Unlike setup, it never fills
 // credentials: it tells the caller what to do next. Re-run after logging in /
 // installing. list/call/batch work as-is once this reports ready.
 async function cmdCheck(adminPath) {
@@ -255,7 +296,7 @@ async function cmdCheck(adminPath) {
         + `(a) download each zip and Plugins → Add New → Upload Plugin → Activate: ${upload}   OR `
         + `(b) with WP-CLI/SSH on the site, install straight from GitHub: ${cli}   — then re-run: node webmcp.mjs check`;
     } else if (!tools.length) {
-      next = `Both plugins active but no WebMCP tools. Confirm you logged in on THIS debug Chrome (port ${PORT}) — it is the one launched with the WebMCP flag — then reload and re-run check.`;
+      next = `The adapter is active but no WebMCP tools appeared. Confirm you logged in on THIS debug Chrome (port ${PORT}) — it is the one launched with WebMCP enabled — then reload and re-run check.`;
     } else {
       next = `Ready: ${tools.length} tools. Proceed with list / call / batch.`;
     }
@@ -266,12 +307,12 @@ async function cmdCheck(adminPath) {
 
 /**
  * Did a batch step actually succeed? A tool can run without throwing yet still
- * refuse the action — the WebMCP testing hook reports that in the result, not as
- * an exception, so a naive batch looked "ok" while every write was rejected.
+ * refuse the action — the WebMCP API reports that in the result, not as an
+ * exception, so a naive batch can look "ok" while every write was rejected.
  * False on: an exec/transport error; a declined confirmation ({cancelled:true});
  * an explicit {ok:false}/{success:false}; or the editor write tools' refusal
- * shape ({inserted|replaced|moved|…:false, reason:"…"}). The result value is the
- * tool's own JSON string; an opaque (non-JSON) string is treated as success.
+ * shape ({inserted|replaced|moved|…:false, reason:"…"}). An opaque string result
+ * is treated as success.
  */
 export function stepOk(res) {
   if (!res || res.error) return false;
@@ -290,26 +331,47 @@ export function stepOk(res) {
 /** Execute one tool in the page and return {result} or {error}; never throws. */
 function execTool(cdp, name, argsJson) {
   return evaluate(cdp, `(async () => {
-    const t = ${TESTING};
-    if (!t) return { error: 'modelContextTesting unavailable' };
-    try { return { result: await t.executeTool(${JSON.stringify(name)}, ${JSON.stringify(argsJson)}) }; }
+    try {
+      const normalizeResult = (value) => {
+        if (typeof value !== 'string') return value;
+        try { return JSON.parse(value); } catch { return value; }
+      };
+      if (typeof document.modelContext?.getTools === 'function' &&
+          typeof document.modelContext?.executeTool === 'function') {
+        const tool = (await document.modelContext.getTools())
+          .find((item) => item.window === window && item.name === ${JSON.stringify(name)});
+        if (!tool) return { error: ${JSON.stringify(`Unknown WebMCP tool: ${name}`)} };
+        const inputMode = window.__webmcpInputMode;
+        if (!inputMode) return { error: 'The standard WebMCP input shape was not detected.' };
+        const input = inputMode === 'object'
+          ? JSON.parse(${JSON.stringify(argsJson)})
+          : ${JSON.stringify(argsJson)};
+        const result = await document.modelContext.executeTool(tool, input);
+        return { result: normalizeResult(result) };
+      }
+      const legacy = navigator.modelContextTesting || document.modelContextTesting;
+      if (!legacy) return { error: 'WebMCP unavailable' };
+      return { result: normalizeResult(await legacy.executeTool(${JSON.stringify(name)}, ${JSON.stringify(argsJson)})) };
+    }
     catch (e) { return { error: String(e && e.message || e) }; }
   })()`, true);
 }
 
 async function cmdList() {
-  return withPage(async (cdp) =>
-    evaluate(cdp, `(async () => {
-      const t = ${TESTING};
-      if (!t) return { error: 'modelContextTesting unavailable — is the WebMCP flag enabled?' };
-      return (await t.listTools()).map(x => ({ name: x.name, description: x.description, inputSchema: x.inputSchema, annotations: x.annotations }));
-    })()`, true));
+  return withPage(async (cdp) => {
+    const tools = await evaluate(cdp, LIST_TOOLS, true);
+    return tools.length ? tools : { ok: false, error: 'No WebMCP tools registered — is WebMCP enabled?' };
+  });
 }
 
 async function cmdCall(name, argsRef) {
   const args = readArgs(argsRef);
   JSON.parse(args); // validate locally
-  return withPage((cdp) => execTool(cdp, name, args));
+  const result = await withPage(async (cdp) => {
+    await detectInputMode(cdp);
+    return execTool(cdp, name, args);
+  });
+  return result.error ? { ok: false, ...result } : result;
 }
 
 // Run a list of [{name, args}] in ONE CDP session — no per-call process/connect
@@ -321,6 +383,7 @@ async function cmdBatch(specRef) {
   const calls = JSON.parse(readArgs(specRef || '-'));
   if (!Array.isArray(calls)) throw new Error('batch expects a JSON array of {name, args}.');
   return withPage(async (cdp) => {
+    await detectInputMode(cdp);
     const results = [];
     for (const c of calls) {
       const argsJson = typeof c.args === 'string' ? c.args : JSON.stringify(c.args ?? {});

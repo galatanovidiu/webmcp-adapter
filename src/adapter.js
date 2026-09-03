@@ -1,27 +1,21 @@
 /**
  * WebMCP Adapter — browser adapter.
  *
- * Maps WordPress abilities (Abilities API client store) onto the browser
- * WebMCP API so in-browser AI agents can discover and run them as tools.
+ * Maps frontend WordPress abilities (Abilities API client store) onto the
+ * browser WebMCP API so in-browser AI agents can discover and run them as
+ * tools.
  *
- * Verified against WordPress 7.0 + Chrome 149 (WebMCPTesting flag): the two
- * read-only core abilities register as tools and execute successfully.
+ * Server-registered abilities deliberately stay on the server-side MCP/REST
+ * surfaces. Keeping this page catalog frontend-only also keeps it within the
+ * practical inventory accepted by browser agents such as Codex Site tools.
  */
 
-// `@wordpress/core-abilities` populates the client store with server-registered
-// abilities: it fetches `/wp-abilities/v1/abilities` over REST and pushes each into
-// the store imperatively (there is no store resolver). Older (WordPress-core) builds
-// do this as a side effect of import; the newer Gutenberg-plugin build changed the
-// contract to export an `initialize()` that must be called explicitly. Import for the
-// side effect (old build) AND call initialize() when it exists (new build). It is
-// async and idempotent, and the sync below subscribes for the late arrivals.
-import * as coreAbilities from '@wordpress/core-abilities';
-coreAbilities.initialize?.();
 import {
 	executeAbility,
 	getAbilities,
 	store as abilitiesStore,
 } from '@wordpress/abilities';
+import { confirmDestructive, throwIfAborted } from './confirmation.js';
 // Frontend abilities: client-side abilities register into the same store on import,
 // so the subscribe-based sync below turns each into a WebMCP tool automatically.
 import './abilities/index.js';
@@ -37,39 +31,18 @@ const modelContext = document.modelContext || navigator.modelContext;
 // on the next page load.
 const WRITE_TOOLS_ENABLED = readModuleFlag( 'writeToolsEnabled' );
 
-// Destructive write abilities (permanent deletes, plugin activate/deactivate,
-// theme switch, connectors, permalink/site-editor changes) are exposed only when
-// this SECOND toggle is on AND writes are enabled. Read once here; any missing/
-// unparseable/non-true value reads as disabled (fail-safe).
+// The destructive save/publish ability is exposed only when this SECOND toggle
+// is on AND writes are enabled. Read once here; any missing/unparseable/non-true
+// value reads as disabled (fail-safe).
 const DESTRUCTIVE_TOOLS_ENABLED = readModuleFlag( 'destructiveToolsEnabled' );
-
-// Dangerous write abilities (plugin/theme install·update·delete, allow-listed
-// option writes, privacy export) are the strictest tier. They are exposed only
-// when this THIRD toggle is on AND writes and destructive are enabled AND the
-// specific ability is individually opted in. Read once here; any missing/
-// unparseable/non-true value reads as disabled (fail-safe).
-const DANGEROUS_TOOLS_ENABLED = readModuleFlag( 'dangerousToolsEnabled' );
-
-// The per-ability dangerous opt-in: only ability names in this set may be exposed
-// as dangerous tools, even when the tier toggle is on. Read once here; a missing/
-// unparseable value yields an empty set (fail-safe: nothing armed).
-const DANGEROUS_OPTIN = new Set( readModuleArray( 'dangerousToolOptIn' ) );
-
-// The canonical set of dangerous (T3) ability names, provided by the server. The
-// Abilities API client store strips custom annotation keys (it keeps only
-// readonly/destructive/idempotent), so the browser cannot read `dangerous` from an
-// ability's annotations — it must recognize a dangerous tool by NAME. A missing/
-// unparseable value yields an empty set (fail-safe: nothing treated as dangerous,
-// but such a tool is still also `destructive` so it stays behind the destructive
-// gate, never exposed under writes-only).
-const DANGEROUS_NAMES = new Set( readModuleArray( 'dangerousToolNames' ) );
 
 // Default-OFF demo escape hatch. When the admin turns this on, the in-page
 // confirmation modal accepts synthetic (script-dispatched) clicks so a script or
-// agent can drive destructive/dangerous tools end-to-end for a recording. When off
-// (the default), the modal's accept path requires a real human click
-// (`event.isTrusted`). Read once here; any missing/unparseable/non-true value reads
-// as off (fail-safe: human-only).
+// agent can drive destructive tools end-to-end for a recording. When off
+// (the default), the modal rejects page-script synthetic clicks
+// (`event.isTrusted === false`). This is a page-script boundary, not proof that a
+// privileged browser automation client is human. Read once here; any
+// missing/unparseable/non-true value reads as off (fail-safe).
 const AUTOMATED_CONFIRMATION_ALLOWED = readModuleFlag(
 	'allowAutomatedConfirmation'
 );
@@ -121,14 +94,14 @@ const RUN_ID = ( () => {
 // confirmation mode. Honest disclosure only — a non-compliant agent can ignore it,
 // which is a known, accepted risk for this proof of concept (tracked as follow-up).
 const CONFIRMATION_MODE_NOTICE = AUTOMATED_CONFIRMATION_ALLOWED
-	? 'Automated confirmation is currently ENABLED: your confirm action will be accepted without a human. '
-	: 'A human must confirm this in the page before it runs; you cannot confirm it yourself. ';
+	? 'Automated confirmation is currently ENABLED: page-script confirmation is accepted. '
+	: 'The page requires a trusted confirmation click before this runs; page script cannot synthesize it. ';
 
 // Prefixed to a destructive tool's description. WebMCP has no agent-consumed
 // "destructive" hint, so the description tells the agent what to expect: running
-// the tool pops an in-page confirmation the human must approve first.
+// the tool pops an in-page confirmation the supervising user can approve first.
 const DESTRUCTIVE_NOTICE =
-	'⚠ DESTRUCTIVE and irreversible. Running this tool asks the user to confirm in the page before it proceeds; they may decline. ';
+	'⚠ PERSISTENT and consequential. Running this tool asks the user to confirm in the page before it proceeds; they may decline. ';
 
 if ( modelContext && typeof modelContext.registerTool === 'function' ) {
 	syncAbilitiesToTools();
@@ -142,7 +115,7 @@ if ( modelContext && typeof modelContext.registerTool === 'function' ) {
  * Reads a named boolean toggle from server-provided script-module data.
  *
  * The PHP side prints the adapter's boolean flags (e.g. `writeToolsEnabled`,
- * `destructiveToolsEnabled`, `dangerousToolsEnabled`, `allowAutomatedConfirmation`)
+ * `destructiveToolsEnabled`, `allowAutomatedConfirmation`)
  * into a JSON script tag with id `wp-script-module-data-webmcp-adapter/adapter`.
  * Anything else — a missing tag, invalid JSON, or a non-true value — reads as
  * disabled (fail-safe).
@@ -167,38 +140,10 @@ function readModuleFlag( key ) {
 }
 
 /**
- * Reads a named array from server-provided script-module data.
- *
- * Mirrors {@link readModuleFlag} but returns the named value when it is an array.
- * Anything else — a missing tag, invalid JSON, or a non-array value — reads as an
- * empty array (fail-safe).
- *
- * @param {string} key The array name to read.
- * @return {Array} The named array, or an empty array.
- */
-function readModuleArray( key ) {
-	const container = document.getElementById(
-		'wp-script-module-data-webmcp-adapter/adapter'
-	);
-
-	if ( ! container ) {
-		return [];
-	}
-
-	try {
-		const parsed = JSON.parse( container.textContent );
-		return Array.isArray( parsed?.[ key ] ) ? parsed[ key ] : [];
-	} catch {
-		return [];
-	}
-}
-
-/**
  * Reads a named plain object from server-provided script-module data.
  *
- * Mirrors {@link readModuleArray} but returns the named value when it is a plain
- * object. Anything else — a missing tag, invalid JSON, null, or an array — reads as
- * an empty object (fail-safe).
+ * Returns the named value when it is a plain object. Anything else — a missing
+ * tag, invalid JSON, null, or an array — reads as an empty object (fail-safe).
  *
  * @param {string} key The object name to read.
  * @return {Object} The named object, or an empty object.
@@ -274,28 +219,19 @@ function resolveScreenLink( abilityName, params = {} ) {
  * Decides whether an ability may be exposed as a WebMCP tool (Option B).
  *
  * Read-only abilities are always exposed. With writes off, no write is exposed. A
- * dangerous write (the strictest tier) is identified by NAME (the client store
- * drops the `dangerous` annotation) and exposed only when the dangerous tier is on
- * AND that specific ability is individually opted in — checked BEFORE the
- * destructive branch, because dangerous abilities are also destructive. A
  * destructive write is exposed when both the write and destructive settings are
  * on. Any other write is exposed when writes are on.
  *
  * @param {Object} annotations The ability's `meta.annotations` object.
- * @param {string} abilityName The ability name (for the dangerous-name + opt-in checks).
  * @return {boolean} True if the ability should register as a tool.
  */
-function shouldExpose( annotations, abilityName ) {
+function shouldExpose( annotations ) {
 	if ( annotations.readonly === true ) {
 		return true;
 	}
 
 	if ( ! WRITE_TOOLS_ENABLED ) {
 		return false;
-	}
-
-	if ( DANGEROUS_NAMES.has( abilityName ) ) {
-		return DANGEROUS_TOOLS_ENABLED && DANGEROUS_OPTIN.has( abilityName );
 	}
 
 	if ( annotations.destructive === true ) {
@@ -306,33 +242,55 @@ function shouldExpose( annotations, abilityName ) {
 }
 
 /**
- * Registers every ability as a WebMCP tool, now and as more arrive.
+ * Registers every frontend ability as a WebMCP tool, now and as more arrive.
  *
- * Abilities load asynchronously, so the store is empty on first paint. We
- * register what is present, then subscribe and register any ability we have
- * not seen yet. Subscribing also covers abilities registered later at runtime.
+ * `@wordpress/abilities` marks browser-owned abilities with
+ * `meta.annotations.clientRegistered`. Server abilities are excluded even if
+ * another plugin loads them into the shared store. We register what is present,
+ * then subscribe for frontend abilities registered later at runtime.
  *
  * @return {void}
  */
 function syncAbilitiesToTools() {
 	const registered = new Set();
+	const pending = new Set();
 
 	const sync = () => {
 		// getAbilities() is a synchronous data-store selector.
 		for ( const ability of getAbilities() ) {
-			if ( registered.has( ability.name ) ) {
+			const annotations = ability.meta?.annotations ?? {};
+
+			if (
+				annotations.clientRegistered !== true ||
+				annotations.serverRegistered === true
+			) {
+				continue;
+			}
+
+			if (
+				registered.has( ability.name ) ||
+				pending.has( ability.name )
+			) {
 				continue;
 			}
 			// Option-B gate. Writes are skipped without being marked registered,
 			// so they are re-evaluated on later store ticks (the decision is fixed
 			// per page load, so a skipped write stays skipped — fail-safe).
-			if (
-				! shouldExpose( ability.meta?.annotations ?? {}, ability.name )
-			) {
+			if ( ! shouldExpose( annotations ) ) {
 				continue;
 			}
-			registered.add( ability.name );
-			registerAbilityAsTool( ability );
+
+			pending.add( ability.name );
+			Promise.resolve()
+				.then( () => registerAbilityAsTool( ability ) )
+				.then( () => registered.add( ability.name ) )
+				.catch( ( error ) => {
+					console.warn(
+						`WebMCP could not register frontend ability "${ ability.name }".`,
+						error
+					);
+				} )
+				.finally( () => pending.delete( ability.name ) );
 		}
 	};
 
@@ -346,7 +304,7 @@ function syncAbilitiesToTools() {
  * Registers one ability as a WebMCP tool.
  *
  * @param {Object} ability The ability record from the client store.
- * @return {void}
+ * @return {Promise<void>|void} Registration completion when the API is asynchronous.
  */
 function registerAbilityAsTool( ability ) {
 	const annotations = ability.meta?.annotations ?? {};
@@ -357,39 +315,54 @@ function registerAbilityAsTool( ability ) {
 			? DESTRUCTIVE_NOTICE + CONFIRMATION_MODE_NOTICE + baseDescription
 			: baseDescription;
 
-	modelContext.registerTool( {
+	return modelContext.registerTool( {
 		name: toToolName( ability.name ),
+		title: ability.label ?? ability.name,
 		description,
 		inputSchema: normalizeInputSchema( ability.input_schema ),
 		annotations: {
 			readOnlyHint: annotations.readonly === true,
+			// WordPress content, labels, and metadata may contain user-authored text.
+			untrustedContentHint: true,
 		},
-		execute: async ( params ) => {
-			// Destructive tools require an in-page human confirmation before they
+		execute: async ( params, context = {} ) => {
+			const signal = context?.signal;
+			throwIfAborted( signal );
+
+			// Destructive tools require an in-page trusted confirmation before they
 			// run. WebMCP has no built-in confirmation and the agent has no
 			// "destructive" hint it consumes, so this is the project's enforcement
-			// point: the human supervising the page must approve. Declining returns
+			// point: the user supervising the page can approve. Declining returns
 			// a structured cancellation (not an error) so the agent knows the action
 			// was refused, not that it failed.
 			if ( annotations.destructive === true ) {
-				const approved = await confirmDestructive(
+				const decision = await confirmDestructive(
 					ability,
-					params ?? {}
+					params ?? {},
+					signal,
+					AUTOMATED_CONFIRMATION_ALLOWED
 				);
 
-				if ( ! approved ) {
+				if ( ! decision.approved ) {
+					const expired = decision.reason === 'expired';
 					logActivity( {
 						ability,
 						params: params ?? {},
-						outcome: 'declined',
+						outcome: expired ? 'expired' : 'declined',
 					} );
 
-					return JSON.stringify( {
+					return {
 						cancelled: true,
-						reason: 'The user declined this destructive action in the page.',
-					} );
+						reason: expired
+							? 'The confirmation expired before approval.'
+							: 'The user declined this destructive action in the page.',
+					};
 				}
 			}
+
+			// The invocation may have been cancelled while the confirmation was
+			// visible. Never let a late click execute an already-cancelled action.
+			throwIfAborted( signal );
 
 			let result;
 			try {
@@ -409,174 +382,9 @@ function registerAbilityAsTool( ability ) {
 				outcome: 'ran',
 			} );
 
-			return typeof result === 'string'
-				? result
-				: JSON.stringify( result );
+			return result;
 		},
 	} );
-}
-
-/**
- * Shows an in-page confirmation for a destructive tool and resolves the choice.
- *
- * Renders a modal dialog into the page showing the tool and the exact arguments
- * about to be sent, with Cancel (default, safe) and Confirm buttons. Resolves
- * `true` only when the human explicitly confirms; the Cancel button and the Escape
- * key resolve `false`. An outside/overlay-background click does NOT dismiss the
- * dialog (an accidental click must not cancel a destructive action). Arguments are
- * rendered with `textContent`
- * (never `innerHTML`), so agent-supplied values cannot inject markup into the page.
- *
- * @param {Object} ability The ability record (for its label/name).
- * @param {Object} params  The arguments the tool would run with.
- * @return {Promise<boolean>} Resolves true if the user confirmed, else false.
- */
-function confirmDestructive( ability, params ) {
-	return new Promise( ( resolve ) => {
-		const toolLabel = ability.label ?? ability.name;
-
-		const overlay = document.createElement( 'div' );
-		overlay.setAttribute( 'data-webmcp-confirm-overlay', '' );
-		overlay.style.cssText =
-			'position:fixed;inset:0;z-index:2147483647;display:flex;' +
-			'align-items:center;justify-content:center;' +
-			'background:rgba(0,0,0,0.55);';
-
-		const dialog = document.createElement( 'div' );
-		dialog.setAttribute( 'role', 'alertdialog' );
-		dialog.setAttribute( 'aria-modal', 'true' );
-		dialog.setAttribute( 'aria-labelledby', 'webmcp-confirm-title' );
-		dialog.style.cssText =
-			'background:#fff;color:#1e1e1e;max-width:460px;width:calc(100% - 40px);' +
-			'border-radius:8px;box-shadow:0 8px 40px rgba(0,0,0,0.4);' +
-			'padding:20px 22px;font:14px/1.5 -apple-system,system-ui,sans-serif;';
-
-		const title = document.createElement( 'h2' );
-		title.id = 'webmcp-confirm-title';
-		title.textContent = '⚠ Confirm destructive action';
-		title.style.cssText =
-			'margin:0 0 8px;font-size:16px;font-weight:600;color:#b32d2e;';
-
-		const intro = document.createElement( 'p' );
-		intro.style.cssText = 'margin:0 0 6px;';
-		intro.textContent =
-			'The AI agent is asking to run a destructive, irreversible tool:';
-
-		const tool = document.createElement( 'p' );
-		tool.style.cssText = 'margin:0 0 10px;font-weight:600;';
-		tool.textContent = toolLabel;
-
-		// Visible marker when the human-only guard is relaxed for demos. Also gives
-		// P3 verification a stable hook (`data-webmcp-confirm-automation`).
-		let automationMarker = null;
-		if ( AUTOMATED_CONFIRMATION_ALLOWED ) {
-			automationMarker = document.createElement( 'p' );
-			automationMarker.setAttribute(
-				'data-webmcp-confirm-automation',
-				''
-			);
-			automationMarker.textContent =
-				'⚙ Automated confirmation enabled — a script may confirm this without a human.';
-			automationMarker.style.cssText =
-				'margin:0 0 10px;padding:6px 8px;border-radius:4px;' +
-				'background:#fcf0c8;color:#664d03;font-size:12px;';
-		}
-
-		const argsLabel = document.createElement( 'p' );
-		argsLabel.style.cssText =
-			'margin:0 0 4px;font-size:12px;text-transform:uppercase;' +
-			'letter-spacing:0.04em;color:#757575;';
-		argsLabel.textContent = 'Arguments';
-
-		const args = document.createElement( 'pre' );
-		args.style.cssText =
-			'margin:0 0 16px;max-height:180px;overflow:auto;background:#f0f0f1;' +
-			'border-radius:4px;padding:10px;font-size:12px;white-space:pre-wrap;' +
-			'word-break:break-word;';
-		// textContent, never innerHTML: agent-supplied args are untrusted.
-		args.textContent = safeStringify( params );
-
-		const buttons = document.createElement( 'div' );
-		buttons.style.cssText =
-			'display:flex;gap:10px;justify-content:flex-end;';
-
-		const cancelBtn = document.createElement( 'button' );
-		cancelBtn.type = 'button';
-		cancelBtn.setAttribute( 'data-webmcp-confirm-cancel', '' );
-		cancelBtn.textContent = 'Cancel';
-		cancelBtn.style.cssText =
-			'padding:6px 14px;border-radius:4px;border:1px solid #757575;' +
-			'background:#fff;cursor:pointer;font:inherit;';
-
-		const confirmBtn = document.createElement( 'button' );
-		confirmBtn.type = 'button';
-		confirmBtn.setAttribute( 'data-webmcp-confirm-accept', '' );
-		confirmBtn.textContent = 'Run destructive tool';
-		confirmBtn.style.cssText =
-			'padding:6px 14px;border-radius:4px;border:1px solid #b32d2e;' +
-			'background:#b32d2e;color:#fff;cursor:pointer;font:inherit;';
-
-		let settled = false;
-		const finish = ( approved ) => {
-			if ( settled ) {
-				return;
-			}
-			settled = true;
-			document.removeEventListener( 'keydown', onKey, true );
-			overlay.remove();
-			resolve( approved );
-		};
-
-		const onKey = ( event ) => {
-			if ( event.key === 'Escape' ) {
-				event.preventDefault();
-				finish( false );
-			}
-		};
-
-		cancelBtn.addEventListener( 'click', () => finish( false ) );
-		confirmBtn.addEventListener( 'click', ( event ) => {
-			// Human-only by default: reject synthetic, script-dispatched clicks
-			// (event.isTrusted === false). A real human click passes; so does a
-			// CDP-injected trusted click, which is the documented out-of-scope
-			// adversary. The default-OFF automation toggle is the ONLY relaxation:
-			// when on, a script may confirm for demos.
-			if ( ! AUTOMATED_CONFIRMATION_ALLOWED && ! event.isTrusted ) {
-				return;
-			}
-			finish( true );
-		} );
-		// Intentionally NO overlay-background click handler: an accidental click
-		// outside the dialog must not dismiss a destructive confirmation. Cancelling
-		// requires the explicit Cancel button or the Escape key (both deliberate).
-		document.addEventListener( 'keydown', onKey, true );
-
-		buttons.append( cancelBtn, confirmBtn );
-		dialog.append( title, intro, tool, argsLabel, args, buttons );
-		if ( automationMarker ) {
-			dialog.insertBefore( automationMarker, argsLabel );
-		}
-		overlay.append( dialog );
-		( document.body ?? document.documentElement ).append( overlay );
-
-		// Default focus on Cancel: the safe choice if the human just hits Enter.
-		cancelBtn.focus();
-	} );
-}
-
-/**
- * Serializes tool arguments for display, tolerating values that cannot be
- * stringified (circular refs, etc.) without throwing.
- *
- * @param {*} value The value to serialize.
- * @return {string} A human-readable string, never throwing.
- */
-function safeStringify( value ) {
-	try {
-		return JSON.stringify( value, null, 2 ) ?? String( value );
-	} catch {
-		return '[unserializable arguments]';
-	}
 }
 
 /**
@@ -674,7 +482,7 @@ function mountActivityLog() {
  *
  * Shared by live logging ({@link logActivity}) and server hydration
  * ({@link hydrateActivityLog}) so both render identical DOM. Each entry shows the
- * time, an "Agent" attribution marker, an outcome badge (ran / failed / declined),
+ * time, an "Agent" attribution marker, an outcome badge (ran / failed / declined / expired),
  * and the action label. When `screenUrl` is a non-empty string it appends an
  * "Open screen ↗" link to that URL; otherwise no link is rendered. Every supplied
  * value is rendered with `textContent`, never `innerHTML`, so untrusted values
@@ -683,7 +491,7 @@ function mountActivityLog() {
  * @param {HTMLElement} list              The log list element to add the entry to.
  * @param {Object}      entry             The entry to render.
  * @param {string}      entry.label       The action label (textContent).
- * @param {string}      entry.outcome     One of `'ran'`, `'failed'`, or `'declined'`.
+ * @param {string}      entry.outcome     One of `'ran'`, `'failed'`, `'declined'`, or `'expired'`.
  * @param {?string}     entry.screenUrl   The screen link URL, or null/empty for no link.
  * @param {string}      entry.timeText    The formatted time text (textContent).
  * @param {boolean}     entry.isWrite     True for a write/destructive entry (link-bearing).
@@ -716,6 +524,7 @@ function appendActivityEntry(
 		ran: 'background:#edfaef;color:#00450c;',
 		failed: 'background:#fcf0f1;color:#8a1f11;',
 		declined: 'background:#fcf9e8;color:#674e00;',
+		expired: 'background:#f0f0f1;color:#50575e;',
 	};
 	badge.textContent = outcome;
 	badge.style.cssText =
@@ -766,7 +575,7 @@ function appendActivityEntry(
  * @param {Object} options         The entry to log.
  * @param {Object} options.ability The ability record (label/name/meta).
  * @param {Object} options.params  The action's arguments (for the screen link).
- * @param {string} options.outcome One of `'ran'`, `'failed'`, or `'declined'`.
+ * @param {string} options.outcome One of `'ran'`, `'failed'`, `'declined'`, or `'expired'`.
  * @return {void}
  */
 function logActivity( { ability, params, outcome } ) {

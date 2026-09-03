@@ -30,7 +30,7 @@ registerAbility( {
 	category: 'webmcp',
 	label: 'Save post',
 	description:
-		'PERSIST the post open in the WordPress block editor to the database — the only editor tool that saves. Saves all staged edits (blocks and document fields). Optional `status` changes the post status in the same confirmed call: "publish" makes it publicly visible, "draft" un-publishes, "pending"/"private" likewise. Saving an already-published post updates the live page. Check editor-context first: isDirty tells whether there are unsaved changes. The human approves this call in a page dialog that shows these arguments.',
+		'PERSIST the post open in the WordPress block editor to the database — the only editor tool that saves. Saves all staged edits (blocks and document fields). Optional `status` changes the post status in the same confirmed call: "publish" makes it publicly visible, "draft" un-publishes, "pending"/"private" likewise. Saving an already-published post updates the live page. Check editor-context first: isDirty tells whether there are unsaved changes. The supervising user can approve this call in a page dialog that shows these arguments.',
 	input_schema: {
 		type: 'object',
 		properties: {
