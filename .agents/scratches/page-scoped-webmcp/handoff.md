@@ -7,8 +7,9 @@ Last updated: 3 September 2026.
 Batches 0 through 8 are merged into `trunk` through pull requests #9 through #17.
 Batch 9 implementation and acceptance are complete on
 `chore/batch-9-acceptance-cleanup`, based on
-`0a0bd66617236ede2750c4a9ab25629c32e7f3f6`. Pull-request delivery is the only
-remaining step. No plugin zip or release was created.
+`0a0bd66617236ede2750c4a9ab25629c32e7f3f6`, and delivered through pull request
+#18. Merge and live `origin/trunk` verification are the only remaining steps. No
+plugin zip or release was created.
 
 The final product contract is documented in:
 
@@ -131,3 +132,5 @@ Before delivery, verify:
 
 Commits, push, pull request, merge, and live merge verification are authorized.
 Do not create a release or add a status-only commit to `trunk` after merge.
+
+Pull request: <https://github.com/galatanovidiu/webmcp-adapter/pull/18>.
