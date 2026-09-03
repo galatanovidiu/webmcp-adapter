@@ -11,8 +11,7 @@ Last updated: 3 September 2026.
   [`implementation-plan.md`](implementation-plan.md).
 - Batches 0 through 6 are merged into `trunk` through pull requests #9 through
   #15.
-- Batch 7 is complete on `feat/bounded-observability`; pull request #16 is open,
-  verified clean/mergeable, and authorized for merge.
+- Batch 7 is merged into `trunk` through pull request #16.
 - The user authorized uninterrupted implementation, verification, pull requests,
   and merges through the remaining approved batches.
 
@@ -50,8 +49,8 @@ normal browser opens them.
 
 ## Next action
 
-Merge Batch 7, then start Batch 8 from updated `origin/trunk` in a separate task.
-Batch 8 owns only the disposable third-party provider extension proof.
+Start Batch 8 from updated `origin/trunk` in a separate task. Batch 8 owns only
+the disposable third-party provider extension proof.
 
 ## Session update: Batch 0
 
@@ -717,14 +716,14 @@ Open risks or failures:
   callback signal. The existing 60-second confirmation expiry remains the page-side
   bound when no callback cancellation reaches the adapter.
 
-Exact next action: merge pull request #16, then begin only Batch 8 from freshly
-updated `origin/trunk` in a new task. Do not begin Batch 9 with Batch 8.
+Exact next action: begin only Batch 8 from freshly updated `origin/trunk` in a new
+task. Do not begin Batch 9 with Batch 8.
 
-Commit/push status: runtime commit `3c1c4be` and verification commit `472636d` are
-pushed on `feat/bounded-observability`. Pull request #16
-(`https://github.com/galatanovidiu/webmcp-adapter/pull/16`) has its title, body,
-two-commit implementation/verification diff, empty status-check rollup, and
-CLEAN/MERGEABLE state verified. Merge follows after this handoff commit is pushed.
+Commit/push status: runtime commit `3c1c4be`, verification commit `472636d`, and
+handoff commit `e1aa47a` were pushed on `feat/bounded-observability`. Pull request
+#16 (`https://github.com/galatanovidiu/webmcp-adapter/pull/16`) was merged into
+`trunk` as `baa2491`; the live merged state and empty status-check rollup were
+verified. No release was created.
 
 ## Session update template
 
