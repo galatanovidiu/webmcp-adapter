@@ -25,6 +25,9 @@ generic MCP bridge or backend ability catalog.
 
 - The block-editor provider owns 15 frontend abilities: 6 reads, 8 unsaved editor
   writes, and the consequential `save-post` persistence tool.
+- The General Settings provider owns one reversible staging ability. It updates
+  only supported live controls, never submits the form, and never echoes the
+  Administration Email value in results, review feedback, or observability.
 - Use one block-agnostic API over `{ name, attributes, innerBlocks }`. Do not add
   one ability per block type.
 - `edit-post-attributes` must reject `status`; `save-post` owns the explicit
@@ -69,7 +72,11 @@ generic MCP bridge or backend ability catalog.
 
 - Anonymous frontend: exactly 2 tools; authenticated frontend: exactly 3.
 - Generic wp-admin: exactly 2 tools.
+- General Settings: exactly 3 tools.
 - Post and Site Editor: exactly 17 tools.
+- Exercise General Settings validation, partial staging, preset/custom formats,
+  native events, review feedback cleanup, sensitive email redaction, and the
+  no-request/no-persistence boundary with `tools/verify-general-form.mjs`.
 - Assert core provider names use the collision-safe dot projection and no request is made to
   `/wp-abilities/v1/abilities`.
 - Exercise Dashboard, post editor, Site Editor, navigation/rediscovery, unsaved

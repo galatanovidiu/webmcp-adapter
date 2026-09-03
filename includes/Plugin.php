@@ -61,6 +61,9 @@ final class Plugin
 	/** @var string Management navigation Ability provider module. */
 	private const ADMIN_DESTINATIONS_MODULE_HANDLE = 'webmcp-adapter/admin-destinations';
 
+	/** @var string General Settings form-staging Ability provider module. */
+	private const GENERAL_SETTINGS_PROVIDER_MODULE_HANDLE = 'webmcp-adapter/general-settings-provider';
+
 	/**
 	 * Registers WordPress hooks.
 	 *
@@ -112,6 +115,9 @@ final class Plugin
 		wp_enqueue_script_module(self::ADMIN_DESTINATIONS_MODULE_HANDLE);
 
 		$screen = function_exists('get_current_screen') ? get_current_screen() : null;
+		if ($screen instanceof \WP_Screen && 'options-general' === $screen->id) {
+			wp_enqueue_script_module(self::GENERAL_SETTINGS_PROVIDER_MODULE_HANDLE);
+		}
 		if ($screen instanceof \WP_Screen && $screen->is_block_editor()) {
 			wp_enqueue_script_module(self::EDITOR_PROVIDER_MODULE_HANDLE);
 		}
@@ -216,6 +222,13 @@ final class Plugin
 		wp_register_script_module(
 			self::EDITOR_PROVIDER_MODULE_HANDLE,
 			WEBMCP_ADAPTER_URL . 'src/abilities/index.js',
+			['@wordpress/abilities', self::CATEGORY_MODULE_HANDLE],
+			WEBMCP_ADAPTER_VERSION
+		);
+
+		wp_register_script_module(
+			self::GENERAL_SETTINGS_PROVIDER_MODULE_HANDLE,
+			WEBMCP_ADAPTER_URL . 'src/abilities/forms/general-settings.js',
 			['@wordpress/abilities', self::CATEGORY_MODULE_HANDLE],
 			WEBMCP_ADAPTER_VERSION
 		);

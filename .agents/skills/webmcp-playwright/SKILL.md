@@ -94,6 +94,8 @@ whose schema requires no arguments.
 ## Expected inventory
 
 - Generic wp-admin: 2 base read tools.
+- General Settings: 3 tools (the base reads plus
+  `wordpress.settings.stage-general-form`).
 - Compatible post and Site Editor screens: 17 tools (2 admin base plus all 15
   editor tools), including `save-post`.
 - Anonymous frontend: 2 base reads; authenticated frontend: 3 base reads.
@@ -131,6 +133,9 @@ clean up the orphaned modal explicitly when it cancels only the outer invocation
 - `title`, schema, `readOnlyHint`, and `untrustedContentHint` mapping;
 - structured tool results;
 - Dashboard and post-editor context;
+- General Settings partial staging, live validation, preset/custom date and time
+  formats, sensitive-email redaction, feedback cleanup, and no form submission or
+  persistence (`tools/verify-general-form.mjs`);
 - insert/read/undo without persistence;
 - save decline and approve;
 - navigation followed by rediscovery;

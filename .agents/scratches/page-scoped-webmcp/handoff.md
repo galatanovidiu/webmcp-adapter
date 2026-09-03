@@ -407,6 +407,101 @@ Commit/push status: atomic Batch 4 commits are being prepared on
 `feat/always-on-editor-provider`; push and pull-request delivery follow
 immediately. No release was created.
 
+## Session update: Batch 5
+
+Date: 3 September 2026.
+
+Batch and scope: one-form/one-Ability supervised staging on General Settings.
+No Batch 6 activity/confirmation restructuring, later observability migration,
+fixture provider, public-document cleanup, or release work was started.
+
+Completed:
+
+- Added `wordpress/settings/stage-general-form` only on the
+  `options-general` screen, producing the exact three-tool General Settings
+  inventory.
+- Added the closed ten-field schema with `minProperties: 1`, email and week
+  constraints, live option validation, and atomic refusal before any control is
+  changed.
+- Staged only provided controls through native value/checked setters plus normal
+  bubbling `input` and `change` events, then verified the visible values.
+- Supported both preset radios and custom controls for date and time formats
+  without submitting the form.
+- Added visible two-pixel per-field highlights and a form notice that lists safe
+  field labels, says nothing is saved, and directs the user to **Save Changes**.
+  Feedback clears on submit, reset, reload, and live form replacement.
+- Kept the Administration Email value out of the result and review notice, added
+  the required confirmation warning, redacted it before the activity request,
+  and verified the stored activity remains redacted.
+- Added `tools/verify-general-form.mjs` and updated the active agent/Playwright
+  instructions for the new page inventory and behavior gate.
+
+Files changed:
+
+- `includes/Plugin.php`
+- `src/abilities/forms/general-settings.js`
+- `src/adapter.js`
+- `tools/verify-general-form.mjs`
+- `AGENTS.md`
+- `.agents/skills/webmcp-agent/SKILL.md`
+- `.agents/skills/webmcp-playwright/SKILL.md`
+- `.agents/scratches/page-scoped-webmcp/handoff.md`
+
+Verification performed:
+
+- TDD characterization first reproduced the one agreed red row: General
+  Settings exposed two tools and lacked
+  `wordpress.settings.stage-general-form`; the other six page rows passed.
+- `npm test`: 23 passed, 0 failed.
+- `node tools/verify-general-form.mjs`: 26 passed, 0 failed on disposable
+  WordPress 7.0/PHP 8.3 with system Chrome. It exercised all ten fields, schema
+  and live validation, atomic partial staging, native events, unchanged values,
+  preset/custom formats, visible feedback and every cleanup path, sensitive
+  email transport/storage redaction, zero requests from the provider callback
+  while staging every field, no `options.php` request, and reload without
+  persistence.
+- `node tools/verify-page-scoping.mjs --expect=agreed`: all seven exact rows
+  passed: Dashboard 2, General Settings 3, post editor 17, Site Editor 17,
+  authenticated frontend 3, anonymous frontend 2, authentication screen 0.
+- `node tools/verify-destinations.mjs`: 13 passed, 0 failed.
+- `.agents/skills/webmcp-playwright/verify-frontend.mjs`: 88 passed, 0 failed,
+  preserving the complete editor, confirmation, cancellation, persistence,
+  cleanup, and rediscovery behavior.
+- Codex's built-in browser discovered exactly three General Settings Site tools
+  and called the staging Ability with Site Title, Timezone, and a preset Date
+  Format. The result reported the three fields and `requiresUserSave: true`; the
+  form showed all three visible two-pixel outlines and the manual-save notice.
+  Reload restored the original title/timezone and removed every feedback marker.
+- PHP, JavaScript, shell, and JSON syntax, WordPress Prettier, the four-file
+  instruction-policy validator, the two modified-skill structure validators,
+  and `git diff --check` passed.
+
+Open risks or failures:
+
+- The provider callback itself emits no request. A WebMCP invocation still sends
+  the adapter's pre-existing audit-only activity POST after the callback; its
+  Administration Email parameter is redacted before transport. Batch 7 owns the
+  generalized observability contract.
+- The untouched `webmcp-playground` skill has a pre-existing standard-YAML
+  frontmatter error under the optional skill-creator validator because its
+  unquoted description contains `Triggers:`. The repository instruction-policy
+  validator and the Playground runtime both passed; changing that unrelated
+  skill metadata is outside Batch 5.
+- Batch 6 remains deliberately unstarted. The current activity and confirmation
+  presentation is unchanged except for the narrow email redaction boundary.
+
+Exact next action: start Batch 6 in a fresh Codex session and generalize the
+activity UI and confirmation flow without changing the proven General Settings
+staging contract.
+
+Commit/push status: runtime commit `fd05e2a` and verification commit `f3f2342`
+were pushed on `feat/general-settings-staging`. Pull request #14
+(`https://github.com/galatanovidiu/webmcp-adapter/pull/14`) had its live title,
+body, implementation/verification diff, empty status-check rollup, and
+CLEAN/MERGEABLE state
+verified. Delivery status at session stop is merged into `trunk`; the live merged
+state was verified. No release was created.
+
 ## Session update template
 
 Update this file after each work session:

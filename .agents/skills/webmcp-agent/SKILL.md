@@ -40,7 +40,12 @@ invocation contains no task.
 ## Tool surface
 
 A generic wp-admin page exposes `webmcp.get-page-context` and
-`webmcp.list-admin-destinations`. A block editor adds these six editor reads:
+`webmcp.list-admin-destinations`.
+General Settings adds `wordpress.settings.stage-general-form`. It stages only
+provided supported fields in the visible form, highlights them for review, and
+never submits or saves. The user must choose **Save Changes** manually.
+
+A block editor adds these six editor reads:
 
 - `webmcp.editor-context`
 - `webmcp.read-blocks`

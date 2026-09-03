@@ -506,6 +506,10 @@ function logActivity( { ability, params, outcome } ) {
 		// to the caller or alter the tool action/result. The server fills user/session/
 		// created and redacts params; nonce is carried by wp.apiFetch.
 		if ( window.wp?.apiFetch ) {
+			const activityParams = redactSensitiveActivityParams(
+				ability,
+				params ?? {}
+			);
 			window.wp
 				.apiFetch( {
 					path: '/webmcp/v1/activity',
@@ -515,7 +519,7 @@ function logActivity( { ability, params, outcome } ) {
 						ability: ability.name,
 						outcome,
 						screen_url: screenUrl,
-						params: params ?? {},
+						params: activityParams,
 					},
 				} )
 				.catch( () => {} );
@@ -524,6 +528,34 @@ function logActivity( { ability, params, outcome } ) {
 		// Logging is presentation-only: swallow rendering errors so they never reach
 		// the caller or alter the tool action/result.
 	}
+}
+
+/**
+ * Redacts the General Settings provider's sensitive value before transport.
+ *
+ * The General Settings provider is the first page-scoped form provider and its
+ * Administration Email input is explicitly sensitive. The backend redactor
+ * remains the storage boundary, but removing this value here also keeps it out of
+ * the same-origin audit request body and any intermediary exporter instrumentation.
+ * Other ability parameters retain their current Batch 4 behavior until the
+ * observability contract is generalized in its dedicated batch.
+ *
+ * @param {Object} ability Ability record.
+ * @param {Object} params  Raw invocation parameters.
+ * @return {Object} Parameters safe for the current activity transport.
+ */
+function redactSensitiveActivityParams( ability, params ) {
+	if (
+		ability.name !== 'wordpress/settings/stage-general-form' ||
+		! Object.prototype.hasOwnProperty.call( params, 'administrationEmail' )
+	) {
+		return params;
+	}
+
+	return {
+		...params,
+		administrationEmail: '[redacted]',
+	};
 }
 
 /**
