@@ -12,6 +12,8 @@ Last updated: 3 September 2026.
 - Batches 0 through 6 are merged into `trunk` through pull requests #9 through
   #15.
 - Batch 7 is merged into `trunk` through pull request #16.
+- Batch 8 implementation and acceptance are complete on
+  `feat/third-party-provider-fixture`; pull request #17 is its delivery surface.
 - The user authorized uninterrupted implementation, verification, pull requests,
   and merges through the remaining approved batches.
 
@@ -49,8 +51,8 @@ normal browser opens them.
 
 ## Next action
 
-Start Batch 8 from updated `origin/trunk` in a separate task. Batch 8 owns only
-the disposable third-party provider extension proof.
+Complete the authorized Batch 8 pull-request delivery. After its verified merge,
+start Batch 9 only in a separate task.
 
 ## Session update: Batch 0
 
@@ -724,6 +726,106 @@ handoff commit `e1aa47a` were pushed on `feat/bounded-observability`. Pull reque
 #16 (`https://github.com/galatanovidiu/webmcp-adapter/pull/16`) was merged into
 `trunk` as `baa2491`; the live merged state and empty status-check rollup were
 verified. No release was created.
+
+## Session update: Batch 8
+
+Date: 3 September 2026.
+
+Batch and scope: disposable third-party provider extension proof only. No Batch 9
+cleanup, uninstall changes, broad public-document rewrite, release work, or adapter
+runtime coupling was started.
+
+Completed:
+
+-   Added an acceptance-only third-party plugin with its own client Ability category,
+    two plugin-owned admin pages, a primary-page-only state read, and one visible
+    reversible tone setter shared by exactly those two pages.
+-   Selected page ownership only through normal `admin_enqueue_scripts` predicates and
+    versioned Script Modules. The modules import only `@wordpress/abilities`, their
+    own category module, and their own shared panel-state service; they never call
+    `document.modelContext` or the adapter directly.
+-   Added precise closed schemas, complete WordPress annotation triples, live
+    `permissionCallback` checks, execution-time DOM revalidation, a same-value no-op
+    with zero DOM assignments, and `previousTone` reversal. Normal WordPress client
+    registration supplies `clientRegistered: true`.
+-   Added real lifecycle controls that unregister the primary read and later register
+    the same definition again. The adapter removes and restores the projected tool
+    without knowing any fixture name.
+-   Paired both client Abilities with server-side activity allowlist entries through
+    `webmcp_activity_ability_definitions`. Read, reversible, validation-failure, and
+    stale-context events are accepted and remain bounded.
+-   Added a focused provider-extension how-to covering normal admin/frontend enqueue
+    hooks, category module execution, exact Ability contracts, activity definitions,
+    and lifecycle verification.
+-   Updated only the disposable Playground and Playwright skill contracts needed to
+    mount and verify the fixture on an exact WordPress 7.0.4 runtime.
+-   Completed the full 266-row `wp-abilities` create-checklist ledger for both client
+    Abilities. PHP/REST/server-MCP-only rules are explicitly N-A; no applicable row is
+    unverified.
+
+Files changed:
+
+-   `tests/fixtures/webmcp-provider/webmcp-provider.php` and its four `src/` modules
+-   `src/activity-observability.js` and `tools/activity-observability.test.mjs`
+-   `tools/provider-fixture.test.mjs`,
+    `tools/provider-fixture-contract.test.php`, and
+    `tools/verify-provider-fixture.mjs`
+-   `docs/provider-extension.md`
+-   `.agents/skills/webmcp-playground/SKILL.md`, `blueprint.json`, and
+    `webmcp-playground.sh`
+-   `.agents/skills/webmcp-playwright/SKILL.md`
+-   `.agents/scratches/page-scoped-webmcp/batch-8-abilities-review.md`
+-   `package.json`
+-   `.agents/scratches/page-scoped-webmcp/handoff.md`
+
+Verification performed:
+
+-   Test-first red run failed because the fixture service did not exist; final
+    `npm test`: 32 passed, 0 failed.
+-   `npm run test:php`: 40 passed, 0 failed, including exact primary/secondary module
+    selection and server-owned observability normalization.
+-   Exact WordPress 7.0.4/PHP 8.3 Playground smoke: 17 editor tools plus a structured
+    `webmcp.editor-context` call.
+-   `tools/verify-provider-fixture.mjs`: 38 passed, 0 failed with system Chrome. It
+    covered exact 4-tool primary and 3-tool secondary inventories, descriptors and
+    automatic provenance, exact read output, invalid-input rejection, visible change,
+    no confirmation, live no-op with zero DOM mutation, reversal, missing-output
+    refusal, detached-panel permission denial, unregister/late re-register, shared
+    execution on both pages, stored read/write/failure events, all unrelated page
+    inventories, zero server Ability requests, and no uncaught page errors.
+-   Complete system-Chrome regression on the same WordPress 7.0.4 runtime: all seven
+    agreed page-inventory rows, destinations 13/13, General Settings 26/26,
+    activity/confirmation 28/28, editor 88/88, and observability 24/24.
+-   Disposable PHP runtime verifier: 16 passed, 0 failed for the Batch 7 additive
+    migration, normalized storage, review, retention, and scheduling contracts.
+-   Codex's built-in browser discovered exactly 4 tools on the primary fixture page,
+    returned the exact `{page, tone}` read, changed `calm` to `focus`, observed the
+    same-value no-op, restored `calm`, navigated to the secondary page, rediscovered
+    exactly 3 tools, executed and reversed the same shared write, then navigated to
+    Dashboard and rediscovered exactly 2 base tools. Administrator review displayed
+    all six calls with the fixture provider, `read`/`reversible` risks, and both page
+    contexts. No safety control was bypassed.
+-   Repository JavaScript, PHP, shell, and JSON syntax checks; WordPress formatting;
+    both instruction and skill-structure validators; exact 266-row ledger coverage;
+    adapter fixture-name absence; and `git diff --check` passed.
+
+Open risks or failures:
+
+-   Codex's first tool fetch immediately after navigation to the secondary page was
+    empty; the exact three tools appeared after a two-second normal registration
+    settling interval. No stale primary tool remained, and execution then passed.
+-   The existing architecture, development, reference, learning-guide, README, and
+    uninstall cleanup remain the coordinated Batch 9 scope and were not rewritten.
+-   Pull requests in this repository have no configured CI checks; delivery relies on
+    the local pure, WordPress, system-Chrome, and built-in-browser evidence above.
+
+Exact next action: prepare narrow Batch 8 commits, push and merge the pull request,
+then begin Batch 9 only in a separately authorized task.
+
+Commit/push status: runtime commit `9ee1d7b`, verification commit `cd87b5a`, and
+this handoff are delivered through pull request #17
+(`https://github.com/galatanovidiu/webmcp-adapter/pull/17`). Live merge state is
+reported outside `trunk`; no post-merge status commit or release will be created.
 
 ## Session update template
 
