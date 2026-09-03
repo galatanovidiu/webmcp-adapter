@@ -502,6 +502,128 @@ CLEAN/MERGEABLE state
 verified. Delivery status at session stop is merged into `trunk`; the live merged
 state was verified. No release was created.
 
+## Session update: Batch 6
+
+Date: 3 September 2026.
+
+Batch and scope: minimized cross-surface activity presentation and generalized
+consequential/privileged confirmation only. No Batch 7 activity schema,
+ingestion, retention, authorization, exporter, or administrator-review work was
+started.
+
+Completed:
+
+- Extracted activity presentation from `src/adapter.js` into
+  `src/activity.js`. The bridge now starts one visible running entry before each
+  invocation and updates that same entry to its terminal outcome without
+  allowing presentation or audit failures to change the Ability result.
+- Replaced the expanded wp-admin panel with a 48-pixel fixed icon on every
+  eligible frontend and wp-admin document. Fresh tabs show only the icon; new
+  activity increments a compact count badge while minimized.
+- Added explicit expansion/close controls, Enter/Space button behavior, Escape
+  collapse with focus restoration, a named region, polite live announcements,
+  a responsive 320-pixel layout, and per-tab expanded/minimized persistence in
+  `sessionStorage`.
+- Isolated activity and confirmation in open shadow roots with explicit host
+  resets. Dynamic labels, outcomes, page context, and summaries use
+  `textContent`; activity links accept only same-origin HTTP(S) URLs.
+- Added `running`, `ran`, `failed`, `declined`, `expired`, `cancelled`, and
+  `stale` presentation states. The existing backend endpoint still receives
+  only its pre-Batch-7 outcomes.
+- Generalized confirmation from `annotations.destructive` to validated
+  `consequential` and `privileged` risk classes. Reversible and persistent
+  actions do not use this supervision layer.
+- The dialog now shows risk, provider, action, page context, and a bounded,
+  recursively redacted action summary. Approve still requires an
+  `event.isTrusted` click; Decline, Escape, focus containment, 60-second expiry,
+  callback cancellation, and the final pre-execution cancellation check remain.
+- Corrected the disposable test harness so numeric WordPress pins use the exact
+  WordPress.org release archive and the plugin mounts before installation. A
+  fresh boot now proves its core version before running tests.
+
+Files changed:
+
+- `src/activity.js`, `src/adapter.js`, `src/confirmation.js`, and
+  `src/adapter-contract.js`
+- `includes/Plugin.php`
+- `tools/adapter-contract.test.mjs` and `tools/verify-activity-ui.mjs`
+- `.agents/skills/webmcp-playwright/verify-frontend.mjs` and both active
+  Playwright/Playground skill instructions
+- `.agents/skills/webmcp-playground/webmcp-playground.sh`
+- `AGENTS.md`
+- `.agents/scratches/page-scoped-webmcp/handoff.md`
+
+Verification performed:
+
+- TDD started red: `npm test` failed because the risk-confirmation predicate did
+  not exist, and the new system-Chrome UI verifier timed out because no default
+  activity icon existed.
+- Final `npm test`: 24 passed, 0 failed.
+- `PORT=9404 .agents/skills/webmcp-playground/webmcp-playground.sh test`:
+  verified WordPress 7.0.4, the exact 17-tool editor inventory, and a structured
+  `webmcp.editor-context` read.
+- `WP_URL=http://127.0.0.1:9402 node tools/verify-activity-ui.mjs`: 28 passed,
+  0 failed. It covered fresh minimized state, 48-pixel target, count badge,
+  immediate running/final updates, every terminal state, persistent-risk
+  non-confirmation, consequential and privileged confirmation, trusted and
+  synthetic clicks, keyboard focus/decline, expiry, cancellation, shadow/style
+  isolation, 320-pixel responsiveness, hostile text, `aria-live`,
+  `sessionStorage`, frontend/wp-admin mounting, and authentication exclusion.
+- `WP_URL=http://127.0.0.1:9402 node
+  .agents/skills/webmcp-playwright/verify-frontend.mjs`: 88 passed, 0 failed,
+  preserving registration/provenance, all editor reads and unsaved writes,
+  undo/redo, save decline/approve/publish, cancellation, cleanup, and navigation
+  rediscovery.
+- `WP_URL=http://127.0.0.1:9402 node tools/verify-page-scoping.mjs
+  --expect=agreed`: all seven exact inventory rows passed: Dashboard 2, General
+  Settings 3, both editors 17, authenticated frontend 3, anonymous frontend 2,
+  and authentication screen 0.
+- `WP_URL=http://127.0.0.1:9402 node tools/verify-general-form.mjs`: 26 passed,
+  0 failed, including the complete staging/privacy/no-request/no-persistence
+  contract.
+- `WP_URL=http://127.0.0.1:9402 node tools/verify-destinations.mjs`: 13 passed,
+  0 failed.
+- Chrome DevTools accessibility inspection exposed the minimized control as a
+  named expandable button and the open panel as a named region with a named
+  close button and polite status. Lighthouse scored accessibility 96 and best
+  practices 100; its two failures were the stock Twenty Twenty-Five nested-list
+  markup and missing document meta description, not adapter UI. Console issue,
+  warning, and error scans were empty. Visual inspection covered minimized,
+  expanded, focus, and redacted confirmation states.
+- Codex's built-in browser on the verified WordPress 7.0.4 runtime discovered
+  exactly two anonymous frontend tools and two Dashboard tools. Both surfaces
+  showed only the isolated 48-pixel icon by default; expansion, Escape collapse,
+  focus restoration, and expansion persistence across reload passed.
+- Repository-wide JavaScript and PHP syntax checks passed, as did shell and JSON
+  syntax, WordPress Prettier checks for changed runtime/new tests, the three-file
+  instruction-policy validator, both skill-structure validators, and
+  `git diff --check`.
+
+Open risks or failures:
+
+- The built-in browser's product safety review rejected a harmless
+  `webmcp.get-page-context` call before page execution because its Codex review
+  backend returned HTTP 404. No alternative execution path or browser was used.
+  Built-in discovery and real UI behavior passed; tool execution, confirmation,
+  and activity transitions are evidenced by the system-Chrome WebMCP path.
+- Current system Chrome cancelled the outer `save-post` invocation without
+  forwarding its callback signal. The test observed the pending modal, cleaned
+  it up, and confirmed no save occurred; production still expires an orphaned
+  confirmation after 60 seconds.
+- Cancelled and stale outcomes are intentionally in-tab only. Batch 7 owns the
+  generalized backend event contract and must add their persistence without
+  weakening the existing privacy boundary.
+
+Exact next action: begin Batch 7 from freshly updated `origin/trunk` and implement
+only the bounded, redacted backend observability contract.
+
+Commit/push status: runtime commit `f561c61` and verification commit `9affde4`
+were pushed on `feat/activity-confirmation`. Pull request #15
+(`https://github.com/galatanovidiu/webmcp-adapter/pull/15`) had its live title,
+body, 13-file diff, three commits, empty status-check rollup, and
+CLEAN/MERGEABLE state verified. Delivery status at session stop is merged into
+`trunk`; the live merged state was verified. No release was created.
+
 ## Session update template
 
 Update this file after each work session:
