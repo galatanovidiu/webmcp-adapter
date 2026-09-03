@@ -183,13 +183,13 @@ cmd_test() {
 	note "Listing tools…"
 	local names expected
 	names="$(run_driver names --url /wp-admin/post.php?post=1\&action=edit)"
-	expected=9
-	if [ "${ENABLE_WRITES:-0}" = "1" ] || [ "${ENABLE_WRITES:-}" = "true" ]; then expected=17; fi
+	expected=8
+	if [ "${ENABLE_WRITES:-0}" = "1" ] || [ "${ENABLE_WRITES:-}" = "true" ]; then expected=16; fi
 	EXPECTED_COUNT="$expected" node -e '
 		const fs = require("fs");
 		const actual = JSON.parse(fs.readFileSync(0, "utf8")).sort();
 		const base = ["webmcp.get-page-context","webmcp.list-admin-destinations"];
-		const reads = [...base,"webmcp.editor-context","webmcp.get-theme-design-tokens","webmcp.list-block-types","webmcp.list-patterns","webmcp.list-templates","webmcp.navigate","webmcp.read-blocks"];
+		const reads = [...base,"webmcp.editor-context","webmcp.get-theme-design-tokens","webmcp.list-block-types","webmcp.list-patterns","webmcp.list-templates","webmcp.read-blocks"];
 		const writes = ["webmcp.edit-post-attributes","webmcp.insert-blocks","webmcp.insert-pattern","webmcp.move-blocks","webmcp.remove-blocks","webmcp.replace-blocks","webmcp.undo","webmcp.update-block-attributes"];
 		const expected = (Number(process.env.EXPECTED_COUNT) === 15 ? [...reads, ...writes] : reads).sort();
 		if (JSON.stringify(actual) !== JSON.stringify(expected)) {

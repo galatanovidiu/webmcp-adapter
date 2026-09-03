@@ -378,8 +378,8 @@ async function cmdCall(name, argsRef) {
 // Run a list of [{name, args}] in ONE CDP session — no per-call process/connect
 // overhead. args may be a JSON object (from the file) or a JSON string. Runs
 // sequentially, capturing each call's {result}/{error}; never early-exits. For
-// SAME-PAGE sequences (a page build) — do not put webmcp.navigate mid-batch, it
-// reloads the page and drops the tools.
+// SAME-PAGE sequences (a page build). Use ordinary browser navigation between
+// batches because navigation reloads the page and drops the tools.
 async function cmdBatch(specRef) {
   const calls = JSON.parse(readArgs(specRef || '-'));
   if (!Array.isArray(calls)) throw new Error('batch expects a JSON array of {name, args}.');

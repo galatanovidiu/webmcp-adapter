@@ -40,9 +40,8 @@ invocation contains no task.
 ## Tool surface
 
 A generic wp-admin page exposes `webmcp.get-page-context` and
-`webmcp.list-admin-destinations`. A block editor adds these seven editor reads:
+`webmcp.list-admin-destinations`. A block editor adds these six editor reads:
 
-- `webmcp.navigate`
 - `webmcp.editor-context`
 - `webmcp.read-blocks`
 - `webmcp.list-block-types`
@@ -55,7 +54,7 @@ editor inventory: insert/update/remove/move/replace blocks, insert patterns, edi
 post attributes, and undo.
 
 With both write and destructive settings on, `webmcp.save-post` becomes the
-eighteenth block-editor tool. It opens the in-page confirmation before persisting
+seventeenth block-editor tool. It opens the in-page confirmation before persisting
 or publishing.
 
 An anonymous frontend page exposes page context and site destinations. An
@@ -80,6 +79,9 @@ theme, site-option, comment, user, or server-side content tools.
 7. Use `webmcp.undo` to recover unsaved changes.
 8. Call `webmcp.save-post` only when persistence is requested and confirm the exact
    arguments in the page.
+
+Use ordinary browser navigation for a destination returned by the discovery tools,
+then rediscover the new document's tool inventory.
 
 Build block specs from `webmcp.list-block-types`; do not assume attribute names.
 Block `clientId` values are not durable, so re-read immediately before targeted
