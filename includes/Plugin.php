@@ -51,11 +51,7 @@ final class Plugin
 	/** @var string Daily activity-retention cron hook. */
 	public const ACTIVITY_PRUNE_HOOK = 'webmcp_adapter_prune_activity';
 
-	/**
-	 * Script module handle for the legacy all-admin editor provider.
-	 *
-	 * @var string
-	 */
+	/** @var string Block-editor Ability provider module. */
 	private const EDITOR_PROVIDER_MODULE_HANDLE = 'webmcp-adapter/editor-provider';
 
 	/** @var string Shared first-party Ability category module. */
@@ -85,7 +81,7 @@ final class Plugin
 	{
 		// Create or upgrade the Site tools activity table on admin load. The migrator
 		// no-ops cheaply once the schema version matches, so running it on every
-		// admin request is safe (this is an admin-only plugin).
+		// admin request is safe.
 		add_action('admin_init', [new ActivityMigrator(), 'maybeMigrate']);
 
 		// Register the gated record/list REST routes (webmcp/v1/activity). The

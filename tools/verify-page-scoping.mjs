@@ -1,16 +1,7 @@
 #!/usr/bin/env node
 /**
- * Characterize the current page inventories and assert the agreed page-scoped
- * contract with system Chrome.
- *
- * The current baseline must pass before runtime restructuring:
- *   node tools/verify-page-scoping.mjs --expect=current
- *
- * The agreed contract is intentionally red during Batch 0:
- *   node tools/verify-page-scoping.mjs --expect=agreed
- *
- * Batch 2's independently green transition state:
- *   node tools/verify-page-scoping.mjs --expect=batch2
+ * Verify the final page-scoped inventory and authentication-screen exclusion
+ * contract with current system Chrome.
  */
 
 import fs from 'node:fs';
@@ -48,31 +39,6 @@ const PROFILE_DIR = path.join(
 const FLAGS = [
 	'--enable-features=WebMCP,WebMCPTesting,DevToolsWebMCPSupport',
 ];
-const expectedMode = readExpectedMode();
-
-const CURRENT_READ_NAMES = [
-	'webmcp.editor-context',
-	'webmcp.get-theme-design-tokens',
-	'webmcp.list-block-types',
-	'webmcp.list-patterns',
-	'webmcp.list-templates',
-	'webmcp.read-blocks',
-].sort();
-const CURRENT_WRITE_NAMES = [
-	...CURRENT_READ_NAMES,
-	'webmcp.edit-post-attributes',
-	'webmcp.insert-blocks',
-	'webmcp.insert-pattern',
-	'webmcp.move-blocks',
-	'webmcp.remove-blocks',
-	'webmcp.replace-blocks',
-	'webmcp.undo',
-	'webmcp.update-block-attributes',
-].sort();
-const CURRENT_COMPLETE_NAMES = [
-	...CURRENT_WRITE_NAMES,
-	'webmcp.save-post',
-].sort();
 
 const ADMIN_BASE_NAMES = [
 	'webmcp.get-page-context',
@@ -99,69 +65,76 @@ const EDITOR_NAMES = [
 	'webmcp.undo',
 	'webmcp.update-block-attributes',
 ];
+const EDITOR_INVENTORY = [ ...ADMIN_BASE_NAMES, ...EDITOR_NAMES ].sort();
+const AUTHENTICATED_FRONTEND_INVENTORY = [
+	...FRONTEND_BASE_NAMES,
+	'webmcp.list-admin-destinations',
+].sort();
+const ANONYMOUS_FRONTEND_INVENTORY = [ ...FRONTEND_BASE_NAMES ].sort();
 
-const AGREED_INVENTORIES = {
+const EXPECTED_INVENTORIES = {
 	dashboard: [ ...ADMIN_BASE_NAMES ].sort(),
 	'general-settings': [
 		...ADMIN_BASE_NAMES,
 		'wordpress.settings.stage-general-form',
 	].sort(),
-	'post-editor': [ ...ADMIN_BASE_NAMES, ...EDITOR_NAMES ].sort(),
-	'site-editor': [ ...ADMIN_BASE_NAMES, ...EDITOR_NAMES ].sort(),
-	'authenticated-frontend': [
-		...FRONTEND_BASE_NAMES,
-		'webmcp.list-admin-destinations',
-	].sort(),
-	'anonymous-frontend': [ ...FRONTEND_BASE_NAMES ].sort(),
-	'authentication-screen': [],
-};
-
-const BATCH_2_INVENTORIES = {
-	dashboard: [ ...ADMIN_BASE_NAMES ].sort(),
-	'general-settings': [ ...ADMIN_BASE_NAMES ].sort(),
-	'post-editor': [
+	'post-editor': EDITOR_INVENTORY,
+	'page-editor': EDITOR_INVENTORY,
+	'compatible-cpt-editor': EDITOR_INVENTORY,
+	'site-editor': EDITOR_INVENTORY,
+	'primary-fixture': [
 		...ADMIN_BASE_NAMES,
-		...CURRENT_READ_NAMES,
-		'webmcp.navigate',
+		'webmcp-provider-fixture.get-panel-state',
+		'webmcp-provider-fixture.set-panel-tone',
 	].sort(),
-	'site-editor': [
+	'secondary-fixture': [
 		...ADMIN_BASE_NAMES,
-		...CURRENT_READ_NAMES,
-		'webmcp.navigate',
+		'webmcp-provider-fixture.set-panel-tone',
 	].sort(),
-	'authenticated-frontend': [
-		...FRONTEND_BASE_NAMES,
-		'webmcp.list-admin-destinations',
-	].sort(),
-	'anonymous-frontend': [ ...FRONTEND_BASE_NAMES ].sort(),
-	'authentication-screen': [],
+	'authenticated-home': AUTHENTICATED_FRONTEND_INVENTORY,
+	'authenticated-singular': AUTHENTICATED_FRONTEND_INVENTORY,
+	'anonymous-home': ANONYMOUS_FRONTEND_INVENTORY,
+	'anonymous-singular': ANONYMOUS_FRONTEND_INVENTORY,
+	login: [],
+	'lost-password': [],
+	registration: [],
 };
 
-const BATCH_3_INVENTORIES = {
-	...BATCH_2_INVENTORIES,
-	'post-editor': [ ...ADMIN_BASE_NAMES, ...CURRENT_READ_NAMES ].sort(),
-	'site-editor': [ ...ADMIN_BASE_NAMES, ...CURRENT_READ_NAMES ].sort(),
-};
+function sameNames( actual, expected ) {
+	return JSON.stringify( actual ) === JSON.stringify( expected );
+}
 
-const BATCH_4_INVENTORIES = {
-	...AGREED_INVENTORIES,
-	'general-settings': [ ...ADMIN_BASE_NAMES ].sort(),
-};
+function difference( left, right ) {
+	return left.filter( ( name ) => ! right.includes( name ) );
+}
 
-function readExpectedMode() {
-	const option = process.argv.find( ( argument ) =>
-		argument.startsWith( '--expect=' )
-	);
-	const mode = option?.slice( '--expect='.length ) || 'agreed';
-	if (
-		! [ 'current', 'batch2', 'batch3', 'batch4', 'agreed' ].includes( mode )
-	) {
-		console.error(
-			'Usage: verify-page-scoping.mjs --expect=current|batch2|batch3|batch4|agreed'
-		);
-		process.exit( 1 );
+function checkExact( label, actual, expected ) {
+	if ( sameNames( actual, expected ) ) {
+		console.log( `  PASS ${ label }: ${ actual.length } exact tools` );
+		return true;
 	}
-	return mode;
+
+	console.log(
+		`  FAIL ${ label }: expected ${ expected.length }, received ${ actual.length }`
+	);
+	const missing = difference( expected, actual );
+	const unexpected = difference( actual, expected );
+	if ( missing.length ) {
+		console.log( `       missing: ${ missing.join( ', ' ) }` );
+	}
+	if ( unexpected.length ) {
+		console.log( `       unexpected: ${ unexpected.join( ', ' ) }` );
+	}
+	return false;
+}
+
+function check( label, condition, detail = '' ) {
+	console.log(
+		`  ${ condition ? 'PASS' : 'FAIL' } ${ label }${
+			detail ? `: ${ detail }` : ''
+		}`
+	);
+	return condition;
 }
 
 async function listTools( page ) {
@@ -203,11 +176,36 @@ async function settledToolNames( page ) {
 	return JSON.parse( previous );
 }
 
-async function openAndInventory( page, pathname ) {
-	const requestedUrl = new URL( pathname, `${ WP_URL }/` );
-	await page.goto( requestedUrl.href, {
-		waitUntil: 'domcontentloaded',
+async function inspectAdapterSurface( page ) {
+	return page.evaluate( () => {
+		const host = document.querySelector( '#webmcp-activity' );
+		const root = host?.shadowRoot;
+		const toggle = root?.querySelector( '[data-webmcp-activity-toggle]' );
+		const panel = root?.querySelector( '[data-webmcp-activity-panel]' );
+		const adapterAssets = [ ...document.scripts ].filter(
+			( script ) =>
+				script.src.includes( '/webmcp-adapter/' ) ||
+				script.textContent.includes( '/webmcp-adapter/' )
+		).length;
+
+		return {
+			activityHosts:
+				document.querySelectorAll( '#webmcp-activity' ).length,
+			minimizedAccessible:
+				toggle instanceof HTMLButtonElement &&
+				toggle.hidden === false &&
+				toggle.getAttribute( 'aria-expanded' ) === 'false' &&
+				Boolean( toggle.getAttribute( 'aria-label' ) ) &&
+				panel instanceof HTMLElement &&
+				panel.hidden === true,
+			adapterAssets,
+		};
 	} );
+}
+
+async function openAndInspect( page, requested ) {
+	const requestedUrl = new URL( requested, `${ WP_URL }/` );
+	await page.goto( requestedUrl.href, { waitUntil: 'domcontentloaded' } );
 	const actualUrl = new URL( page.url() );
 	if (
 		actualUrl.origin !== requestedUrl.origin ||
@@ -217,7 +215,11 @@ async function openAndInventory( page, pathname ) {
 			`Expected ${ requestedUrl.href }, reached ${ actualUrl.href }.`
 		);
 	}
-	return settledToolNames( page );
+
+	return {
+		tools: await settledToolNames( page ),
+		surface: await inspectAdapterSurface( page ),
+	};
 }
 
 async function logIn( page ) {
@@ -239,93 +241,46 @@ async function logIn( page ) {
 	] );
 }
 
-function sameNames( actual, expected ) {
-	return JSON.stringify( actual ) === JSON.stringify( expected );
-}
+async function verifySiteEditorShellRoute( page ) {
+	const marker = `batch-9-${ Date.now() }`;
+	await page.evaluate( ( value ) => {
+		window.__webmcpBatch9ShellMarker = value;
+	}, marker );
+	await page.waitForTimeout( 1500 );
 
-function difference( left, right ) {
-	return left.filter( ( name ) => ! right.includes( name ) );
-}
-
-function checkExact( label, actual, expected ) {
-	if ( sameNames( actual, expected ) ) {
-		console.log( `  PASS ${ label }: ${ actual.length } exact tools` );
-		return true;
+	const routeButton = page.getByRole( 'button', {
+		name: 'Pages',
+		exact: true,
+	} );
+	if (
+		( await routeButton.count() ) !== 1 ||
+		! ( await routeButton.isVisible() )
+	) {
+		return {
+			passed: false,
+			detail: 'the Pages in-shell route button was unavailable',
+		};
 	}
 
-	console.log(
-		`  FAIL ${ label }: expected ${ expected.length }, received ${ actual.length }`
+	await routeButton.click();
+	await page.waitForTimeout( 2000 );
+	const names = await settledToolNames( page );
+	const shellSurvived = await page.evaluate(
+		( value ) => window.__webmcpBatch9ShellMarker === value,
+		marker
 	);
-	const missing = difference( expected, actual );
-	const unexpected = difference( actual, expected );
-	if ( missing.length ) {
-		console.log( `       missing: ${ missing.join( ', ' ) }` );
-	}
-	if ( unexpected.length ) {
-		console.log( `       unexpected: ${ unexpected.join( ', ' ) }` );
-	}
-	return false;
-}
 
-function verifyCurrentBaseline( inventories ) {
-	const recognizedAdminInventory = [
-		CURRENT_READ_NAMES,
-		CURRENT_WRITE_NAMES,
-		CURRENT_COMPLETE_NAMES,
-	].find( ( expected ) => sameNames( inventories.dashboard, expected ) );
-
-	let passed = true;
-	if ( recognizedAdminInventory ) {
-		console.log(
-			`  PASS dashboard: recognized current ${ recognizedAdminInventory.length }-tool gated inventory`
-		);
-	} else {
-		console.log(
-			`  FAIL dashboard: unrecognized current inventory (${ inventories.dashboard.join(
-				', '
-			) })`
-		);
-		passed = false;
-	}
-
-	for ( const context of [
-		'general-settings',
-		'post-editor',
-		'site-editor',
-	] ) {
-		passed =
-			checkExact(
-				`${ context } matches the global Dashboard inventory`,
-				inventories[ context ],
-				inventories.dashboard
-			) && passed;
-	}
-
-	for ( const context of [
-		'authenticated-frontend',
-		'anonymous-frontend',
-		'authentication-screen',
-	] ) {
-		passed =
-			checkExact(
-				`${ context } has no current adapter inventory`,
-				inventories[ context ],
-				[]
-			) && passed;
-	}
-
-	return passed;
-}
-
-function verifyExactContract( inventories, expectedInventories ) {
-	let passed = true;
-	for ( const [ context, expected ] of Object.entries(
-		expectedInventories
-	) ) {
-		passed =
-			checkExact( context, inventories[ context ], expected ) && passed;
-	}
-	return passed;
+	return {
+		passed:
+			shellSurvived &&
+			new URL( page.url() ).searchParams.get( 'p' ) === '/page' &&
+			sameNames( names, EDITOR_INVENTORY ),
+		detail: JSON.stringify( {
+			shellSurvived,
+			url: page.url(),
+			toolCount: names.length,
+		} ),
+	};
 }
 
 const browserContext = await chromium.launchPersistentContext( PROFILE_DIR, {
@@ -335,48 +290,104 @@ const browserContext = await chromium.launchPersistentContext( PROFILE_DIR, {
 } );
 const page = browserContext.pages()[ 0 ] || ( await browserContext.newPage() );
 
-let passed = false;
+let passed = true;
 try {
 	await logIn( page );
 
-	const inventories = {
-		dashboard: await openAndInventory( page, '/wp-admin/' ),
-		'general-settings': await openAndInventory(
+	const scenarios = {
+		dashboard: await openAndInspect( page, '/wp-admin/' ),
+		'general-settings': await openAndInspect(
 			page,
 			'/wp-admin/options-general.php'
 		),
-		'post-editor': await openAndInventory(
+		'post-editor': await openAndInspect(
 			page,
 			'/wp-admin/post.php?post=1&action=edit'
 		),
-		'site-editor': await openAndInventory(
+		'page-editor': await openAndInspect(
+			page,
+			'/wp-admin/post-new.php?post_type=page'
+		),
+		'compatible-cpt-editor': await openAndInspect(
+			page,
+			'/wp-admin/post-new.php?post_type=webmcp_note'
+		),
+		'site-editor': await openAndInspect(
 			page,
 			'/wp-admin/site-editor.php'
 		),
-		'authenticated-frontend': await openAndInventory( page, '/' ),
 	};
+	const shellRoute = await verifySiteEditorShellRoute( page );
 
-	await browserContext.clearCookies();
-	inventories[ 'anonymous-frontend' ] = await openAndInventory( page, '/' );
-	inventories[ 'authentication-screen' ] = await openAndInventory(
+	scenarios[ 'primary-fixture' ] = await openAndInspect(
 		page,
-		'/wp-login.php'
+		'/wp-admin/admin.php?page=webmcp-provider-fixture-primary'
+	);
+	scenarios[ 'secondary-fixture' ] = await openAndInspect(
+		page,
+		'/wp-admin/admin.php?page=webmcp-provider-fixture-secondary'
+	);
+	scenarios[ 'authenticated-home' ] = await openAndInspect( page, '/' );
+	scenarios[ 'authenticated-singular' ] = await openAndInspect(
+		page,
+		'/sample-page/'
 	);
 
-	console.log( `\n== Page inventory: ${ expectedMode } contract ==` );
+	await browserContext.clearCookies();
+	scenarios[ 'anonymous-home' ] = await openAndInspect( page, '/' );
+	scenarios[ 'anonymous-singular' ] = await openAndInspect(
+		page,
+		'/sample-page/'
+	);
+	scenarios.login = await openAndInspect( page, '/wp-login.php' );
+	scenarios[ 'lost-password' ] = await openAndInspect(
+		page,
+		'/wp-login.php?action=lostpassword'
+	);
+	scenarios.registration = await openAndInspect(
+		page,
+		'/wp-login.php?action=register'
+	);
+
+	console.log( '\n== Final page-scoped inventory ==' );
+	for ( const [ label, expected ] of Object.entries(
+		EXPECTED_INVENTORIES
+	) ) {
+		passed =
+			checkExact( label, scenarios[ label ].tools, expected ) && passed;
+	}
+
+	console.log( '\n== Eligible-page activity presentation ==' );
+	for ( const label of Object.keys( EXPECTED_INVENTORIES ).filter(
+		( name ) => EXPECTED_INVENTORIES[ name ].length > 0
+	) ) {
+		const surface = scenarios[ label ].surface;
+		passed =
+			check(
+				`${ label } starts with one minimized accessible activity control`,
+				surface.activityHosts === 1 && surface.minimizedAccessible,
+				JSON.stringify( surface )
+			) && passed;
+	}
+
+	console.log( '\n== Authentication-screen exclusion ==' );
+	for ( const label of [ 'login', 'lost-password', 'registration' ] ) {
+		const surface = scenarios[ label ].surface;
+		passed =
+			check(
+				`${ label } loads no activity UI or adapter assets`,
+				surface.activityHosts === 0 && surface.adapterAssets === 0,
+				JSON.stringify( surface )
+			) && passed;
+	}
+
+	console.log( '\n== Site Editor shell lifecycle ==' );
 	passed =
-		expectedMode === 'current'
-			? verifyCurrentBaseline( inventories )
-			: verifyExactContract(
-					inventories,
-					expectedMode === 'batch2'
-						? BATCH_2_INVENTORIES
-						: expectedMode === 'batch3'
-						? BATCH_3_INVENTORIES
-						: expectedMode === 'batch4'
-						? BATCH_4_INVENTORIES
-						: AGREED_INVENTORIES
-			  );
+		check(
+			'in-shell route keeps the top-level document and exact editor inventory',
+			shellRoute.passed,
+			shellRoute.detail
+		) && passed;
 } finally {
 	await browserContext.close();
 	fs.rmSync( PROFILE_DIR, { recursive: true, force: true } );

@@ -173,14 +173,26 @@ async function waitForTools(cdp, tries = 16) {
   return tools;
 }
 
-/** Detect the standard API input shape once using a harmless frontend read. */
+/** Detect the standard API input shape once using a harmless no-input read. */
 async function detectInputMode(cdp) {
   return evaluate(cdp, `(async () => {
     if (typeof document.modelContext?.executeTool !== 'function') return 'legacy';
     if (window.__webmcpInputMode) return window.__webmcpInputMode;
-    const probe = (await document.modelContext.getTools())
-      .find((tool) => tool.window === window && tool.name === 'webmcp.editor-context');
-    if (!probe) throw new Error('The frontend read probe webmcp.editor-context is unavailable.');
+    const tools = (await document.modelContext.getTools())
+      .filter((tool) => tool.window === window);
+    const noInputRead = (tool) => {
+      let inputSchema = tool.inputSchema;
+      if (typeof inputSchema === 'string') {
+        try { inputSchema = JSON.parse(inputSchema); } catch { return false; }
+      }
+      return tool.annotations?.readOnlyHint === true &&
+        (!Array.isArray(inputSchema?.required) || inputSchema.required.length === 0);
+    };
+    const probe = tools.find((tool) =>
+      ['webmcp.get-page-context', 'webmcp.editor-context'].includes(tool.name) &&
+      noInputRead(tool)
+    ) || tools.find(noInputRead);
+    if (!probe) throw new Error('The page has no read-only, no-input WebMCP tool for safely detecting the input shape.');
     try {
       await document.modelContext.executeTool(probe, {});
       return (window.__webmcpInputMode = 'object');
