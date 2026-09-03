@@ -335,6 +335,78 @@ Commit/push status: three atomic Batch 3 commits are on
 `feat/rendered-destinations`, including this handoff update. Push and pull-request
 delivery follow immediately; no release was created.
 
+## Session update: Batch 4
+
+Date: 3 September 2026.
+
+Batch and scope: always-on block-editor provider plus removal of the legacy
+exposure settings and automated-confirmation bypass. No General Settings staging,
+activity/observability restructuring, fixture provider, or public-doc cleanup.
+
+Completed:
+
+- Removed the runtime read/write/destructive exposure gates. Every valid editor
+  Ability now projects whenever the block-editor provider is loaded.
+- Removed the automated-confirmation bypass. `save-post` always requires an
+  `event.isTrusted` click in the in-page confirmation dialog.
+- Removed the Settings page registration and stopped loading `includes/Settings.php`;
+  legacy options are deliberately left stored and ignored until uninstall cleanup.
+- Added complete readonly/destructive/idempotent declarations to all 15 editor
+  Abilities while retaining `reversible` risk for unsaved writes and
+  `consequential` risk for `save-post`.
+- Updated active Playground, Playwright, page-matrix, and agent-skill contracts to
+  the exact always-on inventory without changing existing editor callbacks.
+
+Files changed:
+
+- `src/adapter.js`, `src/confirmation.js`, and all 15 files in `src/abilities/`
+- `includes/Plugin.php` and `webmcp-adapter.php`
+- Active Playground, Playwright, page-matrix, and WebMCP agent skill files
+- `AGENTS.md` and `.agents/scratches/page-scoped-webmcp/handoff.md`
+
+Verification performed:
+
+- `npm test`: 23 passed, 0 failed.
+- `.agents/skills/webmcp-playwright/verify-frontend.mjs`: 88 passed, 0 failed on
+  disposable WordPress 7.0. This preserved all editor operations and verified
+  exact 2/17 inventories, all 15 annotation triples, always-on writes despite
+  seeded retired options, trusted-click confirmation, synthetic-click rejection,
+  cancellation, save/publish cleanup, and navigation rediscovery.
+- `node tools/verify-page-scoping.mjs --expect=batch4`: all seven exact rows passed:
+  Dashboard 2, General Settings 2, post editor 17, Site Editor 17, authenticated
+  frontend 3, anonymous frontend 2, authentication screen 0.
+- `node tools/verify-page-scoping.mjs --expect=agreed`: every row passed except the
+  intentionally missing General Settings staging Ability, which remains the Batch
+  5 red assertion.
+- Codex's built-in browser verified anonymous frontend 2, login 0, Dashboard 2,
+  no retired settings menu, post editor 17, an unsaved insert/read/undo round trip,
+  and Site Editor 17 with a string template post ID. Its safety layer rejected a
+  `save-post` WebMCP call before the page callback because the post was published;
+  the in-page decline/approve and trusted/synthetic click paths are therefore
+  evidenced by the 88-pass isolated system-Chrome run rather than bypassing that
+  guard.
+- PHP/JavaScript/shell/JSON syntax, skill instruction validators, formatting,
+  `git diff --check`, and the explicit absence of legacy gate/bypass references in
+  active runtime/test/skill files passed.
+
+Open risks or failures:
+
+- General Settings remains at two tools until Batch 5 adds
+  `wordpress.settings.stage-general-form`.
+- `includes/Settings.php` remains as an unreferenced compatibility file. Batch 9
+  owns class removal, uninstall cleanup, and coordinated public documentation.
+- Built-in-browser policy does not permit an agent-driven persistent save to a
+  published post merely for testing; primary Browser UI acceptance for that
+  consequential path remains scheduled in the final human-supervised acceptance
+  batch.
+
+Exact next action: push and merge Batch 4, then start Batch 5 in a fresh Codex
+session and implement only the General Settings staging provider.
+
+Commit/push status: atomic Batch 4 commits are being prepared on
+`feat/always-on-editor-provider`; push and pull-request delivery follow
+immediately. No release was created.
+
 ## Session update template
 
 Update this file after each work session:
