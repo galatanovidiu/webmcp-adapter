@@ -68,16 +68,28 @@ WP_URL=http://localhost:8888 \
   node .agents/skills/webmcp-playwright/driver.mjs names
 
 WP_URL=http://localhost:8888 \
-  node .agents/skills/webmcp-playwright/driver.mjs list
+  node .agents/skills/webmcp-playwright/driver.mjs names --url /wp-admin/options-general.php
 
 WP_URL=http://localhost:8888 \
-  node .agents/skills/webmcp-playwright/driver.mjs call webmcp-editor-context '{}'
+  node .agents/skills/webmcp-playwright/driver.mjs names --url / --anonymous
+
+WP_URL=http://localhost:8888 \
+  node .agents/skills/webmcp-playwright/driver.mjs list --url /wp-admin/site-editor.php
+
+WP_URL=http://localhost:8888 \
+  node .agents/skills/webmcp-playwright/driver.mjs call webmcp-editor-context '{}' \
+    --url /wp-admin/post-new.php?post_type=page
 ```
 
 Configuration: `WP_URL`, `WP_USER`, `WP_PASS`, `CHROME_CHANNEL`,
-`PROFILE_DIR`, and `HEADLESS=1`.
+`PROFILE_DIR`, and `HEADLESS=1`. `--url` accepts a path or an absolute URL on the
+configured WordPress origin. The driver logs in before opening the requested page by
+default; `--anonymous` clears cookies and opens it without logging in.
 
 The driver must fail when WebMCP is unavailable or the page registers zero tools.
+Listing tools must not depend on an editor-specific tool. Before a call through a
+transitional standard API, the driver detects its input shape with a read-only tool
+whose schema requires no arguments.
 
 ## Expected inventory
 
