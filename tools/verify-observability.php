@@ -35,6 +35,15 @@ global $wpdb, $wp_version;
 
 verify('runtime is WordPress 7.0.4', str_starts_with((string) $wp_version, '7.0.4'), (string) $wp_version);
 
+$retiredOptions = [
+	'webmcp_enable_write_tools'          => '1',
+	'webmcp_enable_destructive_tools'    => '1',
+	'webmcp_allow_automated_confirmation' => '1',
+];
+foreach ($retiredOptions as $name => $value) {
+	update_option($name, $value);
+}
+
 $migrator = new ActivityMigrator();
 $table = $migrator->tableName();
 $charset = $wpdb->get_charset_collate();
@@ -71,6 +80,15 @@ $wpdb->insert(
 );
 update_option(ActivityMigrator::DB_VERSION_OPTION, '1');
 $migrator->maybeMigrate();
+
+$retiredOptionsPreserved = true;
+foreach ($retiredOptions as $name => $value) {
+	$retiredOptionsPreserved = $retiredOptionsPreserved && $value === get_option($name);
+}
+verify(
+	'normal schema migration preserves retired option values for rollback compatibility',
+	$retiredOptionsPreserved
+);
 
 $columns = $wpdb->get_col("SHOW COLUMNS FROM {$table}"); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.SchemaChange
 $expectedColumns = [

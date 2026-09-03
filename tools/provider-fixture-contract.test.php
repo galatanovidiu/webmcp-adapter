@@ -23,6 +23,7 @@ $testActions = [];
 $testFilters = [];
 $testModules = [];
 $testEnqueuedModules = [];
+$testPostTypes = [];
 
 function add_action(string $hook, $callback): void
 {
@@ -34,6 +35,12 @@ function add_filter(string $hook, $callback): void
 {
 	global $testFilters;
 	$testFilters[$hook][] = $callback;
+}
+
+function register_post_type(string $postType, array $args): void
+{
+	global $testPostTypes;
+	$testPostTypes[$postType] = $args;
 }
 
 function apply_filters(string $hook, $value)
@@ -110,8 +117,19 @@ function check(string $label, bool $condition, string $detail = ''): void
 }
 
 check(
-	'fixture registers only normal admin and activity hooks',
-	isset($testActions['admin_menu'], $testActions['admin_enqueue_scripts'], $testFilters['webmcp_activity_ability_definitions'])
+	'fixture registers only normal acceptance, admin, and activity hooks',
+	isset($testActions['init'], $testActions['admin_menu'], $testActions['admin_enqueue_scripts'], $testFilters['webmcp_activity_ability_definitions'])
+);
+
+foreach ($testActions['init'] as $callback) {
+	$callback();
+}
+check(
+	'fixture registers a compatible custom post type without adapter coupling',
+	isset($testPostTypes['webmcp_note']) &&
+		true === $testPostTypes['webmcp_note']['show_ui'] &&
+		true === $testPostTypes['webmcp_note']['show_in_rest'] &&
+		in_array('editor', $testPostTypes['webmcp_note']['supports'], true)
 );
 
 $plugin = new Plugin();

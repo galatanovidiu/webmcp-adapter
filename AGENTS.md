@@ -64,8 +64,9 @@ generic MCP bridge or backend ability catalog.
 - Register in the top-level wp-admin shell, including for the Site Editor.
 - Tools are document-bound. Rediscover after navigation or reload.
 - The acceptance target is ChatGPT Work or Codex in the ChatGPT desktop app's
-  built-in browser. System Chrome drivers use the standard
-  `getTools()/executeTool(tool, inputObject)` API; the JSON-string
+  built-in browser. System Chrome drivers use `getTools()/executeTool()` and
+  detect the deployed input shape once with a harmless read. Current Chrome
+  documentation specifies JSON-string input; some builds accept an object. The
   `modelContextTesting` form is a legacy fallback.
 
 ## Verification
@@ -73,13 +74,15 @@ generic MCP bridge or backend ability catalog.
 - Anonymous frontend: exactly 2 tools; authenticated frontend: exactly 3.
 - Generic wp-admin: exactly 2 tools.
 - General Settings: exactly 3 tools.
-- Post and Site Editor: exactly 17 tools.
+- Post, page, compatible custom-post-type, and Site Editor: exactly 17 tools.
 - Exercise General Settings validation, partial staging, preset/custom formats,
   native events, review feedback cleanup, sensitive email redaction, and the
   no-request/no-persistence boundary with `tools/verify-general-form.mjs`.
 - Assert core provider names use the collision-safe dot projection and no request is made to
   `/wp-abilities/v1/abilities`.
-- Exercise Dashboard, post editor, Site Editor, navigation/rediscovery, unsaved
-  insert/read/undo, consequential decline/approve, registration rejection, and the
+- Exercise Dashboard, all compatible editor classes, Site Editor in-shell routes,
+  both provider pages, authenticated/anonymous frontend, authentication-screen
+  exclusion, navigation/rediscovery, unsaved insert/read/undo, consequential
+  decline/approve/expiry/cancellation, registration removal/stale calls, and the
   browser's callback-signal behavior.
 - `src/adapter.js` is served raw; there is no build step.

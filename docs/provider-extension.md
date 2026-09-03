@@ -10,7 +10,10 @@ and do not load their modules on unrelated pages. Adapter policy uses the docume
 The disposable implementation in
 [`tests/fixtures/webmcp-provider`](../tests/fixtures/webmcp-provider/) is the
 executable reference. It registers one read on one plugin page and one reversible
-Ability shared by exactly two plugin pages.
+Ability shared by exactly two plugin pages. The fixture also registers the private,
+REST-enabled `webmcp_note` post type so acceptance can prove that block-editor
+provider selection has no post-type list; that post type is test infrastructure,
+not part of the extension API.
 
 ## 1. Select pages with normal enqueue hooks
 
@@ -186,5 +189,6 @@ and mutation through the standard `document.modelContext` API. Also verify:
 -   unrelated pages contain no provider tool;
 -   the mutation can be reversed to its original visible state;
 -   unregister removes the tool and a later registration restores it once;
+-   a captured handle from the removed registration rejects without execution;
 -   stored activity uses the server-owned provider and risk; and
 -   no request is made to `/wp-abilities/v1/abilities`.

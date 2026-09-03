@@ -2,8 +2,8 @@
 /**
  * Uninstall cleanup for the WebMCP Adapter.
  *
- * Drops the agent-activity table and deletes the schema-version option so no
- * plugin data remains after the user deletes the plugin. Runs only when
+ * Drops the agent-activity table, clears scheduled retention, and deletes the
+ * plugin's options and temporary anonymous rate-limit counters. Runs only when
  * WordPress triggers an uninstall.
  *
  * @package WebmcpAdapter
@@ -23,4 +23,25 @@ $table = $wpdb->prefix . 'webmcp_activity';
 // and DROP TABLE do not accept placeholders for the table identifier here.
 $wpdb->query("DROP TABLE IF EXISTS {$table}");
 
-delete_option('webmcp_adapter_db_version');
+wp_clear_scheduled_hook('webmcp_adapter_prune_activity');
+
+foreach (
+	[
+		'webmcp_adapter_db_version',
+		'webmcp_enable_write_tools',
+		'webmcp_enable_destructive_tools',
+		'webmcp_allow_automated_confirmation',
+	] as $option
+) {
+	delete_option($option);
+}
+
+$rateTransient = $wpdb->esc_like('_transient_webmcp_rate_') . '%';
+$rateTimeout   = $wpdb->esc_like('_transient_timeout_webmcp_rate_') . '%';
+$wpdb->query(
+	$wpdb->prepare(
+		"DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s",
+		$rateTransient,
+		$rateTimeout
+	)
+);

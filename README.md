@@ -1,30 +1,21 @@
 # WordPress Site Tools for ChatGPT Work and Codex
 
-> **This is an experiment.** It is a proof of concept, not a production plugin. It
-> targets a draft browser API and exposes the open WordPress editor to ChatGPT Work
-> and Codex through Site tools.
-> Run it only on a local or throwaway site.
+> **This is an experiment.** It is a proof of concept, not a production plugin.
+> It targets a draft browser API. Run it only on a local or throwaway site.
 
-This WordPress plugin is built specifically for **ChatGPT Work and Codex Site
-tools** in the ChatGPT desktop app's built-in browser. It exposes frontend editor
-abilities through the imperative WebMCP API (`document.modelContext`) so ChatGPT
-Work or Codex can work against the same live, signed-in editor the user sees.
+This WordPress plugin exposes page-scoped frontend Abilities as Site tools for
+ChatGPT Work and Codex in the ChatGPT desktop app's built-in browser. The agent
+works against the same live page, signed-in session, and Gutenberg state the user
+sees.
 
-It is not a generic MCP bridge or a backend automation catalog.
+It is not a generic MCP bridge or a backend automation catalog. The adapter never
+imports `@wordpress/core-abilities`, requests the REST Ability catalog, or projects
+an Ability marked `serverRegistered`.
 
-The adapter is intentionally frontend-only. It does not load or expose WordPress
-server abilities. This keeps the page catalog focused on live editor collaboration
-and avoids the locally reproduced failure where a 121-tool backend-heavy catalog
-made Codex reject the page configuration. OpenAI does not publish a numeric Site
-tools limit.
+## Try it
 
-## Try it with ChatGPT Work or Codex
-
-You need WordPress 7.0+, Node 22+, the latest ChatGPT desktop app, and a model with
-Site tools support (currently GPT-5.6 Sol or GPT-5.6 Terra). Docker is required
-only for the wp-env path below. In
-**Settings → Browser → Permissions**, keep **Enable site tools** on. Site tools are
-currently unavailable in Enterprise and Edu workspaces and may depend on rollout.
+You need WordPress 7.0+, PHP 8.1+, Node.js 22+, and the latest ChatGPT desktop app
+with Site tools available. Docker is required only for wp-env.
 
 ```bash
 git clone https://github.com/galatanovidiu/webmcp-adapter
@@ -33,157 +24,160 @@ npm ci
 npx wp-env start
 ```
 
-Then open
-`http://localhost:8888/wp-admin/post-new.php?post_type=page` in the ChatGPT desktop
-app's built-in
-browser and sign in with wp-env's default `admin` / `password` credentials. Ask
-ChatGPT Work or Codex to inspect the open editor or its selected blocks. The seven
-read tools appear after page registration settles; editor writes stay off until
-enabled under **Settings → WebMCP**.
+Open `http://localhost:8888/wp-admin/post-new.php?post_type=page` in the built-in
+browser and sign in with wp-env's `admin` / `password` credentials. Ask ChatGPT
+Work or Codex to inspect the editor. A compatible block-editor page exposes the
+complete 17-tool inventory after registration settles.
 
-For a no-Docker disposable environment, run:
+For a disposable, no-Docker WordPress 7.0.4 environment:
 
 ```bash
-.agents/skills/webmcp-playground/webmcp-playground.sh up
+.agents/skills/webmcp-playground/webmcp-playground.sh test
 ```
 
-Open the reported Settings URL or
-`http://127.0.0.1:9400/wp-admin/post-new.php?post_type=page` in the built-in browser;
-the public site root does not enqueue admin tools. The repository also ships
-Playwright and raw-CDP drivers for deterministic regression testing in system Chrome;
-see [development.md](docs/development.md).
+This boots WordPress with the adapter and its acceptance-only provider fixture,
+checks the editor inventory, and executes `webmcp.editor-context`. See
+[development.md](docs/development.md) for the complete acceptance workflow.
 
-For the complete product boundary, read the
-[ChatGPT Work and Codex Site tools guide](docs/webmcp-learning-guide.md). A
-[speech-friendly PDF edition](output/pdf/webmcp-chatgpt-work-codex-site-tools-speechify.pdf)
-is also available.
+## Page-scoped inventories
 
-## What it does
+Each top-level document receives only the providers that apply to it.
 
-WordPress 7.0 provides the Abilities API client store. This plugin registers a
-focused `webmcp/*` frontend ability set in that store and projects only abilities
-marked `meta.annotations.clientRegistered`, while rejecting any record also marked
-`serverRegistered`.
+| Page | Site tools |
+|---|---:|
+| Anonymous frontend | 2 |
+| Authenticated frontend | 3 |
+| Generic wp-admin | 2 |
+| General Settings | 3 |
+| Compatible post, page, or custom-post-type block editor | 17 |
+| Site Editor | 17 |
+| Login, password reset, and registration | 0 |
 
-On every top-level wp-admin page, the adapter:
+The two base frontend tools report page context and rendered site destinations.
+Authenticated frontend pages also expose rendered admin-toolbar destinations.
+Generic wp-admin pages report page context and rendered admin-menu destinations.
 
-1. Registers its frontend abilities in the WordPress client store.
-2. Exposes the permitted frontend abilities through `document.modelContext.registerTool()`.
-3. Subscribes to the store for frontend abilities registered later.
-4. Executes calls against the live tab and open Gutenberg state.
+Destination results provide same-origin URLs. Use normal browser navigation to
+open one, then rediscover the new document's tools.
 
-Server abilities marked `serverRegistered` are ignored even when another plugin
-loads them into the shared store. Use REST or a server-side MCP adapter for those
-operations.
+## Ability projection
 
-Ability → WebMCP mapping:
+Provider plugins register normal client Abilities through `@wordpress/abilities`
+only on the pages they own. The adapter observes the shared client store and
+projects records with `clientRegistered: true` and without
+`serverRegistered: true`.
 
-| Ability field | WebMCP tool field |
+| WordPress Ability field | WebMCP field |
 |---|---|
-| `name` (`namespace/name`) | `name` (`namespace-name`) |
+| `name` (`namespace/name`) | `name` (`namespace.name`) |
 | `label` | `title` |
 | `description` | `description` |
 | `input_schema` | `inputSchema` |
 | `meta.annotations.readonly` | `annotations.readOnlyHint` |
 | frontend callback | `execute(params, { signal })` |
 
-Every tool definition carries `untrustedContentHint: true` because editor and site data can
-contain user-authored text. Tool registration failures are reported without creating
-unhandled promise rejections. When a browser supplies the callback cancellation
-signal, cancellation also tears down a pending confirmation before an ability can
-run.
+The slash-to-dot mapping preserves Ability segment boundaries. Every definition
+sets `untrustedContentHint: true`. Registration failures remain retryable, removed
+Abilities abort their WebMCP registrations, and same-name replacements remove the
+old definition before registering the new one.
 
-## Frontend editor tools
+## Editor tools
 
-The tools operate on the open post editor or Site Editor through `window.wp.data`.
-Changes appear live in the editor. Non-destructive writes remain unsaved until the
-separately gated `save-post` tool runs.
+Compatible block-editor screens add 15 tools to the two wp-admin base reads.
 
-Read tools (7, always available):
+Six reads:
 
-- `navigate`
-- `editor-context`
-- `read-blocks`
-- `list-block-types`
-- `get-theme-design-tokens`
-- `list-patterns`
-- `list-templates`
+- `webmcp.editor-context`
+- `webmcp.read-blocks`
+- `webmcp.list-block-types`
+- `webmcp.get-theme-design-tokens`
+- `webmcp.list-patterns`
+- `webmcp.list-templates`
 
-Editor write tools (8, behind **Enable write tools**):
+Eight reversible, unsaved writes:
 
-- `insert-blocks`
-- `update-block-attributes`
-- `insert-pattern`
-- `remove-blocks`
-- `move-blocks`
-- `replace-blocks`
-- `edit-post-attributes`
-- `undo`
+- `webmcp.insert-blocks`
+- `webmcp.update-block-attributes`
+- `webmcp.insert-pattern`
+- `webmcp.remove-blocks`
+- `webmcp.move-blocks`
+- `webmcp.replace-blocks`
+- `webmcp.edit-post-attributes`
+- `webmcp.undo`
 
-Persistence tool (1, behind both **Enable write tools** and **Enable destructive
-tools**):
+`webmcp.save-post` is the consequential persistence tool. It saves staged editor
+state and can publish only when its `status` argument explicitly requests that
+transition. `webmcp.edit-post-attributes` rejects `status`.
 
-- `save-post` — saves the staged editor state and can publish when explicitly asked.
+The editor API is block-agnostic. It uses recursive
+`{ name, attributes, innerBlocks }` block specs instead of one tool per block type.
 
-The editor set is block-agnostic. It works with the registered block types through
-the recursive `{ name, attributes, innerBlocks }` shape instead of adding one tool
-per block. See [architecture.md](docs/architecture.md) for the full contract.
+## General Settings
 
-## Safety model
+`wordpress.settings.stage-general-form` is available only on
+`options-general.php`. It updates supported visible controls, dispatches their
+normal events, highlights changes, and asks the user to review the form and choose
+**Save Changes**. The callback never submits the form or sends a persistence
+request. Reloading discards staged values.
 
-- Read tools are always exposed.
-- Non-destructive editor writes are default-off.
-- `save-post` is behind a second default-off gate and an in-page confirmation.
-- The confirmation requires a trusted click by default. A separate clearly marked
-  demo option can relax this for automated testing.
-- An unanswered confirmation safely expires after 60 seconds.
-- When the browser forwards an invocation signal to the callback, cancellation
-  removes a pending confirmation and prevents a later click from running the action.
-- Frontend callbacks re-check the current editor state and validate their inputs
-  through the Abilities API before changing it.
+The Administration Email value is sensitive. It is never echoed in the result,
+review feedback, activity request, stored event, or exporter hook.
 
-The ChatGPT built-in browser performs its own safety review for Site tool calls. That
-product layer is separate from the plugin's exposure gates and confirmation modal.
+## Safety and activity
 
-## Activity log and review
+Every applicable Ability with valid risk metadata is available on its page.
+Readonly Abilities derive the `read` risk. Mutations declare `reversible`,
+`persistent`, `consequential`, or `privileged`; an invalid mutation declaration
+fails closed.
 
-Every completed, failed, declined, or expired tool call is shown in a collapsible
-in-page panel. Activity is also persisted
-to the plugin's custom table, with parameter redaction and bounded retention, and can
-be reviewed under **Tools → Site tools activity**.
+Consequential and privileged calls always open the plugin's in-page confirmation.
+Approval requires an `event.isTrusted` click. Decline, Escape, 60-second expiry,
+forwarded cancellation, and a final pre-execution context check all prevent the
+action from running.
 
-## ChatGPT Work and Codex limitations
+Eligible pages show one minimized 48-pixel activity control by default. Expanding
+it reveals in-tab running and final states. Authentication screens load neither
+the adapter nor the activity UI.
 
-ChatGPT Work and Codex currently discover only imperative tools registered from
-JavaScript in the top-level document. Declarative form tools and tools registered
-inside iframes are not available as Site tools. This plugin registers in the
-top-level wp-admin shell; the Site Editor's canvas may remain in an iframe.
+Each completed invocation attempt also sends one non-blocking, redacted event to
+the backend. The default store keeps seven days or 10,000 rows, whichever bound is
+reached first. Administrators can review it under **Tools → Site tools activity**.
+Anonymous ingestion uses signed short-lived context tokens, hashed identifiers,
+payload limits, and rate limits. Observability failure never changes a tool result.
 
-Tools are tab-bound and ephemeral. Navigating or reloading invalidates old handles,
-and the agent must discover the tools again on the new document.
+See [architecture.md](docs/architecture.md) for the runtime and data boundaries and
+[provider-extension.md](docs/provider-extension.md) for third-party registration.
+The [Site tools learning guide](docs/webmcp-learning-guide.md) also has a
+[speech-friendly PDF](output/pdf/webmcp-chatgpt-work-codex-site-tools-speechify.pdf).
 
-## Requirements
+## Client limitations
 
-- WordPress 7.0 or later.
-- PHP 8.1 or later.
-- Node.js 22 or later for local tooling.
-- The latest ChatGPT desktop app with Site tools enabled for ChatGPT Work or Codex.
+ChatGPT Work and Codex currently discover imperative registrations from the
+top-level document. They do not discover declarative form tools or iframe
+registrations. Tools are document-bound: navigation or reload requires discovery
+on the new page, while same-document refresh timing remains unspecified.
 
-Use the built-in browser in the latest ChatGPT desktop app. Public sites
-should use HTTPS; localhost is suitable for development.
+The built-in browser performs its own invocation safety review. That product layer
+is separate from WordPress authorization and the plugin's confirmation.
 
-## Install
+## Install and uninstall
 
-For a local trial, use the ChatGPT Work/Codex quick start above. To install
-manually, download `webmcp-adapter.zip` from the
+For a local trial, use wp-env or Playground above. For a manual installation,
+download `webmcp-adapter.zip` from the
 [latest release](https://github.com/galatanovidiu/webmcp-adapter/releases/latest),
-upload it under **Plugins → Add New → Upload Plugin**, and activate **WebMCP
-Adapter**. No companion abilities plugin is required.
+upload it under **Plugins → Add New → Upload Plugin**, and activate it. No companion
+Ability catalog is required.
+
+Normal activation and upgrade preserve existing activity rows and retired option
+values for rollback compatibility. Deactivation stops scheduled retention without
+deleting stored review data. WordPress uninstall removes the activity table,
+plugin options, scheduled retention, and temporary anonymous rate-limit counters.
 
 ## Status
 
-Proof of concept. The frontend read, write, and save/publish tiers are covered by the
-local browser test workflows. WebMCP is still a draft and browser support can change.
+Proof of concept. WebMCP remains a draft, and browser/product behavior can change.
+Check the [official Site tools documentation](https://learn.chatgpt.com/docs/webmcp)
+for current availability and limitations.
 
 ## License
 

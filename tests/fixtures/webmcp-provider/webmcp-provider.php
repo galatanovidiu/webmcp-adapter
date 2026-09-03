@@ -42,11 +42,27 @@ final class Plugin
 	/** Registers the fixture's normal WordPress extension hooks. */
 	public function register(): void
 	{
+		add_action('init', [$this, 'registerAcceptancePostType']);
 		add_action('admin_menu', [$this, 'registerPages']);
 		add_action('admin_enqueue_scripts', [$this, 'enqueueForPage']);
 		add_filter(
 			'webmcp_activity_ability_definitions',
 			[$this, 'addActivityDefinitions']
+		);
+	}
+
+	/** Registers a block-editor-compatible post type for adapter acceptance. */
+	public function registerAcceptancePostType(): void
+	{
+		register_post_type(
+			'webmcp_note',
+			[
+				'label'        => __('WebMCP Notes', 'webmcp-provider-fixture'),
+				'public'       => false,
+				'show_ui'      => true,
+				'show_in_rest' => true,
+				'supports'     => ['title', 'editor'],
+			]
 		);
 	}
 

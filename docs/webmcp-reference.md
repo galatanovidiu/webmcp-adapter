@@ -1,22 +1,22 @@
 # WebMCP reference for ChatGPT Work and Codex Site tools
 
-Consolidated reference for WebMCP, built from the Chrome for Developers docs and the
-`GoogleChromeLabs/webmcp-tools` demos. It is scoped to this plugin's product goal:
-exposing WordPress administration (wp-admin) to ChatGPT Work and Codex as Site
-tools in the ChatGPT desktop app's built-in browser.
+Consolidated reference for WebMCP, built from the current OpenAI and Chrome for
+Developers documentation and the `GoogleChromeLabs/webmcp-tools` demos. It is
+scoped to this plugin's product goal: exposing page-scoped WordPress frontend and
+wp-admin Abilities to ChatGPT Work and Codex as Site tools.
 
 Sources (canonical, check for updates):
-- OpenAI Site tools: https://learn.chatgpt.com/docs/webmcp
-- Overview: https://developer.chrome.com/docs/ai/webmcp
-- Imperative API: https://developer.chrome.com/docs/ai/webmcp/imperative-api
-- Declarative API: https://developer.chrome.com/docs/ai/webmcp/declarative-api
-- Best practices: https://developer.chrome.com/docs/ai/webmcp/best-practices
-- WebMCP vs MCP: https://developer.chrome.com/docs/ai/webmcp/compare-mcp
-- Use cases: https://developer.chrome.com/docs/ai/webmcp/use-cases
-- Evals: https://developer.chrome.com/docs/ai/webmcp/evals
-- Spec: https://github.com/webmachinelearning/webmcp
-- Demos + dev tools: https://github.com/GoogleChromeLabs/webmcp-tools
-- Tool Inspector (Chrome extension): https://chromewebstore.google.com/detail/model-context-tool-inspec/gbpdfapgefenggkahomfgkhfehlcenpd
+
+- [OpenAI Site tools](https://learn.chatgpt.com/docs/webmcp)
+- [Chrome WebMCP overview](https://developer.chrome.com/docs/ai/webmcp)
+- [Chrome imperative API](https://developer.chrome.com/docs/ai/webmcp/imperative-api)
+- [Chrome declarative API](https://developer.chrome.com/docs/ai/webmcp/declarative-api)
+- [Chrome best practices](https://developer.chrome.com/docs/ai/webmcp/best-practices)
+- [WebMCP versus MCP](https://developer.chrome.com/docs/ai/webmcp/compare-mcp)
+- [Use cases](https://developer.chrome.com/docs/ai/webmcp/use-cases)
+- [Evaluations](https://developer.chrome.com/docs/ai/webmcp/evals)
+- [WebMCP specification](https://github.com/webmachinelearning/webmcp)
+- [Demos and development tools](https://github.com/GoogleChromeLabs/webmcp-tools)
 
 ## Status and client notes
 
@@ -25,10 +25,10 @@ Sources (canonical, check for updates):
   ChatGPT desktop app's built-in browser. Current availability requires a supported
   model, app version, workspace, and rollout; check the OpenAI page above.
 - ChatGPT Work and Codex currently ignore declarative form tools and iframe registrations.
-- Current Chrome development builds use the `WebMCP` feature; older Chrome 149
-  testing used `WebMCPTesting` and `DevToolsWebMCPSupport`.
-- Prefer `document.modelContext`. Feature-detect
-  `document.modelContext || navigator.modelContext` for older Chrome builds.
+- Current Chrome uses the `WebMCP` feature. The deterministic harness also enables
+  the Chrome 149 testing flags because it retains that interface as a fallback.
+- Prefer `document.modelContext`. Chrome deprecated `navigator.modelContext` in
+  Chrome 150; the adapter feature-detects it only for older builds.
 - Tools are document-bound and ephemeral.
 
 ## What WebMCP is
@@ -83,7 +83,11 @@ Schema: `type`, `properties`, `enum`, `required`, `minimum`, `integer`, etc.),
 const tools = await document.modelContext.getTools({ fromOrigins: ['https://partner.org'] });
 
 // Execute a tool; args passed as an object
-const result = await document.modelContext.executeTool(tool, { param: 'value' }, { signal });
+const result = await document.modelContext.executeTool(
+  tool,
+  '{"param":"value"}',
+  { signal }
+);
 
 // React to changes in the registered tool set
 document.modelContext.addEventListener('toolchange', (event) => { /* ... */ });
@@ -225,17 +229,21 @@ End-to-end journeys support ordered and `unordered` call sets. CLI:
 - Declarative: `french-bistro` (Le Petit Bistro).
 - `shared/types` holds shared TypeScript type definitions.
 
-## Notes for WordPress administration
+## Notes for this WordPress adapter
 
 See [architecture.md](architecture.md) for the project boundary and
 [development.md](development.md) for verification. Summary:
 
-- The plugin registers frontend editor abilities in the WordPress Abilities client
-  store and projects only records marked `clientRegistered` without
-  `serverRegistered` provenance.
+- WordPress and third-party providers register frontend Abilities only on the
+  documents they own. The adapter projects records marked `clientRegistered`
+  without `serverRegistered` provenance.
 - It does not import `@wordpress/core-abilities` or project REST-backed abilities.
-- Registration occurs in the top-level wp-admin shell, including on the Site Editor.
-- The adapter subscribes for late frontend registrations and waits for each
-  `registerTool()` promise before treating the ability as registered.
+- Registration occurs in the top-level document, including the Site Editor shell.
+- Ability names project from `namespace/name` to `namespace.name`.
+- The adapter subscribes for late registrations, waits for `registerTool()`, and
+  aborts registrations when their Abilities disappear.
 - `execute` returns structured ability results and observes the invocation's
   cancellation signal when the client supplies it to the callback.
+- Page providers expose the exact current inventory; normal navigation replaces the
+  document and requires fresh discovery.
+- Consequential and privileged calls require the trusted in-page confirmation.

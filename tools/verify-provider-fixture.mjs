@@ -656,6 +656,15 @@ try {
 	);
 
 	console.log( '\n== B8.3: late add/remove lifecycle ==' );
+	const staleHandleCaptured = await page.evaluate( async ( name ) => {
+		if ( typeof document.modelContext?.getTools !== 'function' ) {
+			return false;
+		}
+		window.__webmcpRemovedFixtureHandle = (
+			await document.modelContext.getTools()
+		).find( ( tool ) => tool.window === window && tool.name === name );
+		return Boolean( window.__webmcpRemovedFixtureHandle );
+	}, READ_TOOL );
 	await page.click( '[data-webmcp-provider-remove-read]' );
 	const afterRemoval = await waitForInventory( page, SECONDARY_INVENTORY );
 	const removalState = await page.evaluate( async ( name ) => {
@@ -673,6 +682,37 @@ try {
 			removalState.status.trim() === 'Removed' &&
 			! afterRemoval.some( ( tool ) => tool.name === READ_TOOL ),
 		JSON.stringify( { removalState, afterRemoval } )
+	);
+	const staleHandleCall = await page.evaluate( async ( mode ) => {
+		if (
+			typeof document.modelContext?.executeTool !== 'function' ||
+			! window.__webmcpRemovedFixtureHandle
+		) {
+			return { supported: false };
+		}
+		try {
+			await document.modelContext.executeTool(
+				window.__webmcpRemovedFixtureHandle,
+				mode === 'string' ? '{}' : {}
+			);
+			return { supported: true, rejected: false };
+		} catch ( error ) {
+			return {
+				supported: true,
+				rejected: true,
+				name: error.name,
+				message: error.message,
+			};
+		} finally {
+			delete window.__webmcpRemovedFixtureHandle;
+		}
+	}, inputMode );
+	check(
+		'a stale handle from an aborted registration rejects without executing',
+		staleHandleCaptured &&
+			staleHandleCall.supported === true &&
+			staleHandleCall.rejected === true,
+		JSON.stringify( staleHandleCall )
 	);
 
 	await page.click( '[data-webmcp-provider-restore-read]' );
