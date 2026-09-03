@@ -15,7 +15,7 @@
 #
 # Env (optional):
 #   PORT=9400              Playground HTTP port
-#   WP=7.0  PHP=8.3        version pins
+#   WP=7.0.4  PHP=8.3      version pins
 #   PW_VERSION=latest      @wp-playground/cli version (default: latest)
 #
 set -euo pipefail
@@ -24,11 +24,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # This script lives in webmcp-adapter/.agents/skills/webmcp-playground/. The adapter
 # repo root is three levels up.
 ADAPTER_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+FIXTURE_DIR="$ADAPTER_DIR/tests/fixtures/webmcp-provider"
 PW_SKILL="$SCRIPT_DIR/../webmcp-playwright"
 DRIVER="$PW_SKILL/driver.mjs"
 
 PORT="${PORT:-9400}"
-WP="${WP:-7.0}"
+WP="${WP:-7.0.4}"
 PHP="${PHP:-8.3}"
 PW_VERSION="${PW_VERSION:-latest}"
 WP_URL="http://127.0.0.1:$PORT"
@@ -103,6 +104,7 @@ cmd_up() {
 		die "The managed Playground process exists but $WP_URL is not responding. Run '$0 down' before retrying."
 	fi
 	[ -d "$ADAPTER_DIR" ] || die "Missing adapter plugin dir: $ADAPTER_DIR"
+	[ -d "$FIXTURE_DIR" ] || die "Missing provider fixture dir: $FIXTURE_DIR"
 	local blueprint="$SCRIPT_DIR/blueprint.json"
 	[ -f "$blueprint" ] || die "blueprint.json missing next to this script."
 
@@ -111,6 +113,7 @@ cmd_up() {
 		--wp="$WP_SOURCE" --php="$PHP" --port="$PORT" \
 		--blueprint="$blueprint" \
 		--mount-before-install="$ADAPTER_DIR:/wordpress/wp-content/plugins/webmcp-adapter" \
+		--mount-before-install="$FIXTURE_DIR:/wordpress/wp-content/plugins/webmcp-provider" \
 		>"$LOG" 2>&1 &
 	local server_pid=$!
 	printf '%s\n' "$server_pid" > "$PIDFILE"

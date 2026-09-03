@@ -99,6 +99,9 @@ whose schema requires no arguments.
 - Compatible post and Site Editor screens: 17 tools (2 admin base plus all 15
   editor tools), including `save-post`.
 - Anonymous frontend: 2 base reads; authenticated frontend: 3 base reads.
+- With the disposable provider fixture active, its primary admin page has 4 tools
+  (2 admin base, one page-only read, and one shared reversible write); its
+  secondary page has 3 (2 admin base plus the same shared write).
 - No `core-*`, `og-*`, or other `serverRegistered` ability may appear.
 
 The store can populate later, so poll until the frontend inventory stabilizes. A
@@ -142,6 +145,9 @@ clean up the orphaned modal explicitly when it cancels only the outer invocation
   styles, session storage, and safe untrusted-text rendering
   (`tools/verify-activity-ui.mjs`);
 - navigation followed by rediscovery;
+- provider-owned page inventories, read/write execution, reversal, activity
+  definitions, and late unregister/register lifecycle
+  (`tools/verify-provider-fixture.mjs`);
 - no request to `/wp-abilities/v1/abilities`.
 
 ## Gotchas

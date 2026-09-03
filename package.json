@@ -21,7 +21,7 @@
 		"plugin-zip": "wp-scripts plugin-zip",
 		"format": "wp-scripts format",
 		"test": "node --test tools/*.test.mjs",
-		"test:php": "php tools/activity-contract.test.php",
+		"test:php": "php tools/activity-contract.test.php && php tools/provider-fixture-contract.test.php",
 		"wp-env": "wp-env"
 	},
 	"devDependencies": {

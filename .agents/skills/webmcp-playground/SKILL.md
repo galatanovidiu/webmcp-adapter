@@ -1,14 +1,15 @@
 ---
 name: webmcp-playground
-description: 'One-command, disposable WordPress Playground for testing the frontend-only ChatGPT Work and Codex Site tools adapter — no MySQL, local install, companion plugin, or build. Boots a real-HTTP WP 7.0 with the adapter mounted and active, then drives its tools via the webmcp-playwright skill. Use when the user wants a throwaway adapter test, smoke test, or repeatable setup. Triggers: "test in playground", "easy way to test", "try the plugin", "webmcp playground".'
+description: 'One-command, disposable WordPress Playground for testing the frontend-only ChatGPT Work and Codex Site tools adapter — no MySQL, local install, or build. Boots a real-HTTP WP 7.0.4 with the adapter and its acceptance-only provider fixture mounted and active, then drives its tools via the webmcp-playwright skill. Use when the user wants a throwaway adapter test, smoke test, or repeatable setup. Triggers: "test in playground", "easy way to test", "try the plugin", "webmcp playground".'
 ---
 
 # ChatGPT Work and Codex Site tools in Playground
 
 The fastest way to test the WordPress Site tools built for ChatGPT Work and Codex.
-No MySQL or local database setup, no `wp server`, no build step. One script boots a real-HTTP WordPress 7.0 in
+No MySQL or local database setup, no `wp server`, no build step. One script boots a real-HTTP WordPress 7.0.4 in
 [WordPress Playground](https://wordpress.github.io/wordpress-playground/) with
-`webmcp-adapter` mounted and active, then uses the
+`webmcp-adapter` plus its acceptance-only third-party provider fixture mounted and
+active, then uses the
 [webmcp-playwright](../webmcp-playwright/SKILL.md) skill to list and execute the tools.
 
 The product acceptance target is ChatGPT Work or Codex in the ChatGPT desktop
@@ -20,8 +21,8 @@ or activity-review UI.
 
 `@wp-playground/cli server` serves WordPress over a **real HTTP port** (`:9400`) — NOT the
 `playground.wordpress.net` iframe. This provides a normal top-level localhost
-document for page-side WebMCP regression tests. The plugin is **mounted live** from
-the repo before installation so the activation blueprint works on a fresh port.
+document for page-side WebMCP regression tests. Both plugins are **mounted live**
+from the repo before installation so the activation blueprint works on a fresh port.
 Edits to PHP or `src/adapter.js` show up on reload — the same no-build flow as the
 local site.
 
@@ -65,7 +66,7 @@ Example:
 
 ## Options (env)
 
-- `PORT` (9400), `WP` (7.0), `PHP` (8.3), `PW_VERSION` (latest `@wp-playground/cli`).
+- `PORT` (9400), `WP` (7.0.4), `PHP` (8.3), `PW_VERSION` (latest `@wp-playground/cli`).
 - `HEADLESS=0` — run the driver's Chrome headed (visible) instead of headless.
 
 All 15 editor tools are exposed on compatible block-editor screens. Each `save-post`
@@ -81,12 +82,15 @@ Playwright scripts or testing the gate end to end, use that skill directly again
 
 ## The blueprint is reusable on its own
 
-[blueprint.json](blueprint.json) activates the adapter and lands on the frontend.
+[blueprint.json](blueprint.json) activates the adapter and provider fixture, then
+lands on the frontend.
 It is a standard Playground blueprint — you can also paste it into the live editor at
 `playground.wordpress.net` (it would need the plugins fetched from a URL rather than mounted
 from disk, but the steps are the shareable part).
 It also seeds the three retired exposure/confirmation options with restrictive or
-unsafe legacy values so the live suite proves the runtime ignores them.
+unsafe legacy values so the live suite proves the runtime ignores them. The fixture
+adds tools only on its two plugin-owned admin pages, so the core page inventories
+remain unchanged.
 
 ## Teardown
 
@@ -99,7 +103,7 @@ Playground is fully ephemeral — its SQLite database lives only in a temp dir a
 
 ## Gotchas
 
-- First boot downloads `wordpress-7.0.zip`; later boots are cached and fast.
+- First boot downloads `wordpress-7.0.4.zip`; later boots are cached and fast.
 - Numeric `WP` values resolve through the exact WordPress.org release archive so
   the compatibility target cannot drift to a newer core version.
 - The script records and validates the process it starts. It refuses to reuse or

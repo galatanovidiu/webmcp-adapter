@@ -20,6 +20,13 @@ test( 'resolved activity outcomes distinguish success, refusal, and stale contex
 	);
 	assert.deepEqual(
 		classifyResolvedActivity( {
+			applied: false,
+			reason: 'The visible state is unavailable.',
+		} ),
+		{ outcome: 'failed', errorCode: 'ability_refused' }
+	);
+	assert.deepEqual(
+		classifyResolvedActivity( {
 			inEditor: false,
 			reason: 'This tab is not editing a post in the block editor.',
 		} ),
