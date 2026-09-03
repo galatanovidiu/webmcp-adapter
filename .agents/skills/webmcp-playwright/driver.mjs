@@ -8,8 +8,9 @@
  *
  * Usage (run from the WordPress project root):
  *   node .agents/skills/webmcp-playwright/driver.mjs list
- *   node .agents/skills/webmcp-playwright/driver.mjs names
- *   node .agents/skills/webmcp-playwright/driver.mjs call <tool-name> '<json-args>'
+ *   node .agents/skills/webmcp-playwright/driver.mjs names --url /
+ *   node .agents/skills/webmcp-playwright/driver.mjs names --url / --anonymous
+ *   node .agents/skills/webmcp-playwright/driver.mjs call <tool-name> '<json-args>' --url <url-or-path>
  *
  * Requires Playwright as a library (no browser download needed — we use system Chrome):
  *   PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install --prefix .agents/skills/webmcp-playwright
@@ -20,6 +21,10 @@
  *   CHROME_CHANNEL=chrome          Playwright channel for system Chrome
  *   PROFILE_DIR=<tmp>/webmcp-pw-profile   persistent profile (keeps the login cookie)
  *   HEADLESS=1                     run headless (default: headed)
+ *
+ * CLI options:
+ *   --url <url-or-path>            page to inspect (default: /wp-admin/)
+ *   --anonymous                    clear cookies and skip the wp-admin login
  */
 
 import os from 'node:os';
@@ -41,8 +46,35 @@ const PROFILE_DIR = process.env.PROFILE_DIR || path.join(os.tmpdir(), 'webmcp-pw
 const HEADLESS = process.env.HEADLESS === '1' || process.env.HEADLESS === 'true';
 const FLAGS = ['--enable-features=WebMCP,WebMCPTesting,DevToolsWebMCPSupport'];
 
-const [cmd, toolName, toolArgs] = process.argv.slice(2);
+const cliArgs = process.argv.slice(2);
+const anonymous = cliArgs.includes('--anonymous');
+const urlOptionIndex = cliArgs.indexOf('--url');
+if (
+	urlOptionIndex !== -1 &&
+	( !cliArgs[urlOptionIndex + 1] ||
+		cliArgs[urlOptionIndex + 1].startsWith('--') )
+) {
+	console.error('--url needs an absolute URL or a WordPress-relative path.');
+	process.exit(1);
+}
+const requestedUrl = urlOptionIndex === -1 ? '/wp-admin/' : cliArgs[urlOptionIndex + 1];
+const positionalArgs = cliArgs.filter((argument, index) =>
+	argument !== '--anonymous' &&
+	index !== urlOptionIndex &&
+	index !== urlOptionIndex + 1
+);
+const [cmd, toolName, toolArgs] = positionalArgs;
 let standardInputMode = null;
+
+/** Resolve a WordPress-relative path or same-origin absolute URL. */
+function resolvePageUrl(requested) {
+	const baseUrl = new URL(`${WP_URL}/`);
+	const pageUrl = new URL(requested, baseUrl);
+	if (pageUrl.origin !== baseUrl.origin) {
+		throw new Error(`--url must stay on the configured WordPress origin ${baseUrl.origin}.`);
+	}
+	return pageUrl.href;
+}
 
 /** Read serializable tool descriptors through the current or legacy WebMCP API. */
 async function listTools(page) {
@@ -72,16 +104,32 @@ async function listTools(page) {
 	});
 }
 
-/** Detect the current standard API's input shape using a harmless read tool. */
+/** Detect the current standard API's input shape using a harmless no-input read. */
 async function detectStandardInputMode(page) {
 	if (standardInputMode || !(await page.evaluate(() =>
 		typeof document.modelContext?.executeTool === 'function'
 	))) return;
 
 	standardInputMode = await page.evaluate(async () => {
-		const probe = (await document.modelContext.getTools())
-			.find((tool) => tool.window === window && tool.name === 'webmcp-editor-context');
-		if (!probe) throw new Error('The frontend read probe webmcp-editor-context is unavailable.');
+		const tools = (await document.modelContext.getTools())
+			.filter((tool) => tool.window === window);
+		const noInputRead = (tool) => {
+			let inputSchema = tool.inputSchema;
+			if (typeof inputSchema === 'string') {
+				try { inputSchema = JSON.parse(inputSchema); } catch { return false; }
+			}
+			return tool.annotations?.readOnlyHint === true &&
+				(!Array.isArray(inputSchema?.required) || inputSchema.required.length === 0);
+		};
+		const probe = tools.find((tool) =>
+			['webmcp.get-page-context', 'webmcp-editor-context'].includes(tool.name) &&
+			noInputRead(tool)
+		) || tools.find(noInputRead);
+		if (!probe) {
+			throw new Error(
+				'The page has no read-only, no-input WebMCP tool for safely detecting the input shape.'
+			);
+		}
 		try {
 			await document.modelContext.executeTool(probe, {});
 			return 'object';
@@ -122,8 +170,8 @@ function normalizeResult(result) {
 	try { return JSON.parse(result); } catch { return result; }
 }
 
-/** Launch system Chrome with WebMCP, log in if needed, open wp-admin, wait for tools. */
-async function openAdmin() {
+/** Launch system Chrome, establish the requested auth state, and open the target page. */
+async function openPage(targetUrl) {
 	const ctx = await chromium.launchPersistentContext(PROFILE_DIR, {
 		channel: CHANNEL,
 		headless: HEADLESS,
@@ -131,16 +179,20 @@ async function openAdmin() {
 	});
 	const page = ctx.pages()[0] || (await ctx.newPage());
 
-	await page.goto(`${WP_URL}/wp-admin/`, { waitUntil: 'domcontentloaded' });
-	if (page.url().includes('wp-login.php') || (await page.$('#user_login'))) {
-		await page.fill('#user_login', WP_USER);
-		await page.fill('#user_pass', WP_PASS);
-		await Promise.all([
-			page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
-			page.click('#wp-submit'),
-		]);
+	if (anonymous) {
+		await ctx.clearCookies();
+	} else {
 		await page.goto(`${WP_URL}/wp-admin/`, { waitUntil: 'domcontentloaded' });
+		if (page.url().includes('wp-login.php') || (await page.$('#user_login'))) {
+			await page.fill('#user_login', WP_USER);
+			await page.fill('#user_pass', WP_PASS);
+			await Promise.all([
+				page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
+				page.click('#wp-submit'),
+			]);
+		}
 	}
+	await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
 
 	const apiAvailable = await page.evaluate(() =>
 		typeof document.modelContext?.getTools === 'function' ||
@@ -168,19 +220,21 @@ async function openAdmin() {
 	}
 	if (!tools.length) {
 		await ctx.close();
-		throw new Error('No WebMCP tools registered on the WordPress admin page.');
+		throw new Error(`No WebMCP tools registered on ${page.url()}.`);
 	}
-	await detectStandardInputMode(page);
 	return { ctx, page, tools };
 }
 
 async function main() {
 	if (!cmd || !['list', 'names', 'call'].includes(cmd)) {
-		console.error("Usage: driver.mjs <list|names|call> [tool-name] ['<json-args>']");
+		console.error(
+			"Usage: driver.mjs <list|names|call> [tool-name] ['<json-args>'] [--url <url-or-path>] [--anonymous]"
+		);
 		process.exit(1);
 	}
 
-	const { ctx, page, tools } = await openAdmin();
+	const targetUrl = resolvePageUrl(requestedUrl);
+	const { ctx, page, tools } = await openPage(targetUrl);
 	try {
 		if (cmd === 'names') {
 			console.log(JSON.stringify(tools.map((t) => t.name).sort(), null, 2));
@@ -190,6 +244,7 @@ async function main() {
 			if (!toolName) throw new Error("call needs a tool name: driver.mjs call <name> '<json>'");
 			const argStr = toolArgs || '{}';
 			JSON.parse(argStr); // validate CLI input before selecting the API shape
+			await detectStandardInputMode(page);
 			const result = normalizeResult(await executeTool(page, toolName, argStr));
 			console.log(JSON.stringify(result, null, 2));
 		}
