@@ -9,7 +9,7 @@ if (!defined('ABSPATH')) {
 }
 
 /**
- * Creates and migrates the agent-activity table.
+ * Creates and migrates the Site tools activity table.
  *
  * Owns the custom table `{prefix}webmcp_activity` and its schema version. The
  * adapter records every agent tool call into this table so activity survives

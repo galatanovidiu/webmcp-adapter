@@ -1,12 +1,12 @@
 ---
 name: webmcp-playwright
-description: Drive and test this plugin's frontend WebMCP tools with Playwright and current system Chrome. Lists and executes tools through the standard document.modelContext API, with the Chrome 149 testing hook as a fallback, and can assert wp-admin settings, editor state, activity, and confirmation UI. Use for deterministic browser regression tests or when the user says "webmcp playwright".
+description: Regression-test this plugin's frontend ChatGPT Work and Codex Site tools with Playwright and current system Chrome. Lists and executes tools through the standard document.modelContext API, with the Chrome 149 testing hook as a fallback, and can assert wp-admin settings, editor state, activity, and confirmation UI. Use for deterministic browser regression tests or when the user says "webmcp playwright".
 ---
 
-# WebMCP with Playwright
+# Testing ChatGPT Work and Codex Site tools with Playwright
 
-This is the deterministic system-Chrome harness. Codex Site tools in the ChatGPT
-desktop built-in browser remain the product acceptance target.
+This is the deterministic system-Chrome harness. ChatGPT Work and Codex Site tools
+in the ChatGPT desktop built-in browser remain the product acceptance target.
 
 Read [architecture](../../../docs/architecture.md) and
 [development](../../../docs/development.md) before changing the runtime.

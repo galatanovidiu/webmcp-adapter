@@ -1,7 +1,8 @@
-# Development — local environment and testing
+# Developing WordPress Site tools for ChatGPT Work and Codex
 
-The acceptance target is Codex Site tools in the ChatGPT desktop app's built-in
-browser. System Chrome remains useful as a deterministic protocol regression harness.
+The product and acceptance target is ChatGPT Work and Codex Site tools in the
+ChatGPT desktop app's built-in browser. System Chrome remains useful only as a
+deterministic protocol regression harness.
 
 ## Local environment with wp-env
 
@@ -51,14 +52,14 @@ It starts a real-HTTP WordPress 7.0 instance, mounts this plugin live, activates
 and reports the localhost URL. The SQLite state is disposable. Run `down` when
 finished.
 
-## Test in Codex
+## Test in ChatGPT Work or Codex
 
 Use GPT-5.6 Sol or GPT-5.6 Terra in the latest ChatGPT desktop app. Confirm **Enable
 site tools** is on under **Settings → Browser → Permissions**.
 
 1. Start wp-env or Playground.
-2. Open the direct wp-admin URL in Codex's built-in browser. Do not embed it in an
-   iframe.
+2. Open the direct wp-admin URL in the ChatGPT desktop app's built-in browser. Do
+   not embed it in an iframe.
 3. On the Dashboard, inspect Site tools. The default inventory must stabilize at
    exactly seven `webmcp-*` read tools.
 4. Run `webmcp-editor-context`; it must return `inEditor: false`.
@@ -130,7 +131,7 @@ node tools/webmcp.mjs call webmcp-editor-context '{}'
 - No request is made to `/wp-abilities/v1/abilities`.
 - Registration rejection does not cause an unhandled promise rejection or mark the
   ability as successfully registered.
-- Structured ability results remain structured in Codex.
+- Structured ability results remain structured in ChatGPT Work and Codex.
 - When the browser forwards the callback signal, cancelling an invocation removes
   a pending confirmation. Record clients that cancel only the outer call without
   forwarding a signal.
@@ -146,5 +147,5 @@ plugin version is also used as the module cache key.
 npx wp-env stop
 ```
 
-For current Codex availability and limitations, see the
+For current ChatGPT Work and Codex availability and limitations, see the
 [official Site tools documentation](https://learn.chatgpt.com/docs/webmcp).

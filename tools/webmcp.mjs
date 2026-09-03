@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 /**
- * WebMCP agent CLI — drive the page's WebMCP tools in Chrome over the DevTools
- * Protocol. Lets any terminal-side agent (e.g. Claude Code) act as the WebMCP
- * consumer: discover tools, then execute them in the live page.
+ * WebMCP regression CLI — drive the project's ChatGPT Work and Codex Site tools in
+ * Chrome over the DevTools Protocol. This is a deterministic development fallback
+ * for discovery and execution in the live page; the product target is the ChatGPT
+ * desktop app's built-in browser.
  *
  * Usage:
  *   node webmcp.mjs ensure                       Launch the debug Chrome if it is not up

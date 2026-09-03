@@ -1,21 +1,24 @@
 ---
 name: webmcp-agent
-description: Drive this plugin's frontend WordPress WebMCP abilities in the current page. Prefer Codex Site tools in the ChatGPT desktop built-in browser; use the bundled system-Chrome CLI as a deterministic fallback. Use when the user asks to drive, test, demo, or use the plugin's WebMCP editor tools, perform a wp-admin editor action through WebMCP, or says "/webmcp" or "/webmcp-agent".
+description: Drive this plugin's frontend WordPress Site tools for ChatGPT Work and Codex in the current page. Prefer the ChatGPT desktop built-in browser; use the bundled system-Chrome CLI as a deterministic fallback. Use when the user asks to drive, test, demo, or use the plugin's WebMCP editor tools, perform a wp-admin editor action through WebMCP, or says "/webmcp" or "/webmcp-agent".
 ---
 
-# WebMCP agent
+# ChatGPT Work and Codex WordPress Site tools
 
-This plugin exposes frontend `webmcp/*` abilities from the top-level wp-admin
-document. They operate on the live Gutenberg editor in the current tab.
+This plugin is built specifically for ChatGPT Work and Codex Site tools in the
+ChatGPT desktop app's built-in browser. It exposes frontend `webmcp/*` abilities
+from the top-level wp-admin document, operating on the live Gutenberg editor in the
+current tab.
 
 Read [architecture](../../../docs/architecture.md) for the boundary and
 [development](../../../docs/development.md) for the test environments.
 
 ## Choose the client
 
-When Codex's built-in browser is available, use its native WebMCP Site tools. Open
-the target wp-admin page directly, fetch the listed tools, and call only tools in
-that inventory. Rediscover after every navigation or reload.
+When the ChatGPT desktop app's built-in browser is available, use its native Site
+tools with ChatGPT Work or Codex. Open the target wp-admin page directly, fetch the
+listed tools, and call only tools in that inventory. Rediscover after every
+navigation or reload.
 
 Use [`tools/webmcp.mjs`](../../../tools/webmcp.mjs) only when native Site tools are
 unavailable or the task explicitly needs the deterministic system-Chrome harness.

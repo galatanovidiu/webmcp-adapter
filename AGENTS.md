@@ -2,19 +2,23 @@
 
 ## Project goal
 
-Expose frontend WordPress editor abilities to browser AI agents through the
+Build WordPress Site tools specifically for ChatGPT Work and Codex in the ChatGPT
+desktop app's built-in browser. Expose frontend editor abilities through the
 imperative WebMCP API (`document.modelContext`). The adapter is tab-bound and
 frontend-only: project `clientRegistered` abilities and exclude every
-`serverRegistered` ability, including records loaded by another plugin.
+`serverRegistered` ability, including records loaded by another plugin. It is not a
+generic MCP bridge or backend ability catalog.
 
 ## Read first
 
 - [docs/architecture.md](docs/architecture.md) — runtime boundary, editor tools,
   gating, confirmation, and cancellation.
-- [docs/development.md](docs/development.md) — Codex, Playground, wp-env, and system
-  Chrome verification.
+- [docs/development.md](docs/development.md) — ChatGPT Work/Codex, Playground,
+  wp-env, and system Chrome verification.
 - [docs/webmcp-reference.md](docs/webmcp-reference.md) — current API and client
   differences.
+- [docs/webmcp-learning-guide.md](docs/webmcp-learning-guide.md) — current ChatGPT
+  Work and Codex Site tools product boundary.
 - `.hyper/memory/` and `.hyper/loops/` — local gitignored build history.
 
 ## Runtime contract
@@ -53,12 +57,14 @@ frontend-only: project `clientRegistered` abilities and exclude every
 
 - Prefer `document.modelContext`; keep `navigator.modelContext` only as the
   Chrome 149 fallback.
-- Codex Site tools discover imperative registrations from the top-level document.
+- ChatGPT Work and Codex Site tools discover imperative registrations from the
+  top-level document.
   They do not currently discover declarative form tools or iframe registrations.
 - Register in the top-level wp-admin shell, including for the Site Editor.
 - Tools are document-bound. Rediscover after navigation or reload.
-- The acceptance target is Codex's built-in browser. System Chrome drivers use the
-  standard `getTools()/executeTool(tool, inputObject)` API; the JSON-string
+- The acceptance target is ChatGPT Work or Codex in the ChatGPT desktop app's
+  built-in browser. System Chrome drivers use the standard
+  `getTools()/executeTool(tool, inputObject)` API; the JSON-string
   `modelContextTesting` form is a legacy fallback.
 
 ## Verification

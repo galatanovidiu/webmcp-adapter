@@ -1,11 +1,12 @@
-# WebMCP Reference
+# WebMCP reference for ChatGPT Work and Codex Site tools
 
 Consolidated reference for WebMCP, built from the Chrome for Developers docs and the
-`GoogleChromeLabs/webmcp-tools` demos. Scoped toward building WebMCP support for
-WordPress administration (wp-admin).
+`GoogleChromeLabs/webmcp-tools` demos. It is scoped to this plugin's product goal:
+exposing WordPress administration (wp-admin) to ChatGPT Work and Codex as Site
+tools in the ChatGPT desktop app's built-in browser.
 
 Sources (canonical, check for updates):
-- Codex Site tools: https://learn.chatgpt.com/docs/webmcp
+- OpenAI Site tools: https://learn.chatgpt.com/docs/webmcp
 - Overview: https://developer.chrome.com/docs/ai/webmcp
 - Imperative API: https://developer.chrome.com/docs/ai/webmcp/imperative-api
 - Declarative API: https://developer.chrome.com/docs/ai/webmcp/declarative-api
@@ -20,10 +21,10 @@ Sources (canonical, check for updates):
 ## Status and client notes
 
 - WebMCP is a proposed web standard.
-- Codex and ChatGPT Work can use imperative WebMCP tools as **Site tools** in the
+- ChatGPT Work and Codex can use imperative WebMCP tools as **Site tools** in the
   ChatGPT desktop app's built-in browser. Current availability requires a supported
   model, app version, workspace, and rollout; check the OpenAI page above.
-- Codex currently ignores declarative form tools and iframe registrations.
+- ChatGPT Work and Codex currently ignore declarative form tools and iframe registrations.
 - Current Chrome development builds use the `WebMCP` feature; older Chrome 149
   testing used `WebMCPTesting` and `DevToolsWebMCPSupport`.
 - Prefer `document.modelContext`. Feature-detect
@@ -32,7 +33,9 @@ Sources (canonical, check for updates):
 
 ## What WebMCP is
 
-A page exposes structured "tools" to the browser's built-in AI agent. The page declares
+A page exposes structured "tools" to a browser's built-in AI agent. In this project,
+that product client is ChatGPT Work or Codex in the ChatGPT desktop app's built-in
+browser. The page declares
 each feature's purpose, inputs (JSON Schema), and outputs, so the agent calls explicit
 functions instead of guessing from the DOM. Three pillars: discovery, JSON Schemas,
 state management.
@@ -86,7 +89,7 @@ const result = await document.modelContext.executeTool(tool, { param: 'value' },
 document.modelContext.addEventListener('toolchange', (event) => { /* ... */ });
 ```
 
-### Cross-origin (broader WebMCP API, not Codex Site tools)
+### Cross-origin (broader WebMCP API, not ChatGPT Work or Codex Site tools)
 
 Two conditions, both required:
 1. Host page delegates via Permissions Policy: `<iframe allow="tools"></iframe>`.
@@ -94,7 +97,7 @@ Two conditions, both required:
 
 The `tools` Permissions Policy defaults to `self`.
 
-## Declarative API (not currently discovered by Codex)
+## Declarative API (not currently discovered by ChatGPT Work or Codex)
 
 Annotate a standard `<form>` so the browser turns it into a tool. No JS registration.
 
@@ -174,7 +177,9 @@ Not a replacement. Different layers; use both together.
 | Use         | Background API actions, data     | Navigate and actuate live UI    |
 
 Analogy: MCP = call center (anywhere). WebMCP = in-store expert (on-site only).
-Recommended split: MCP for core business logic and data; WebMCP for contextual in-browser UI.
+Recommended split: MCP for core business logic and data; WebMCP for contextual
+in-browser UI.
+This plugin implements only the WebMCP side for ChatGPT Work and Codex Site tools.
 
 ## Best practices
 

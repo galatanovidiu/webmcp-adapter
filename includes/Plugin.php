@@ -34,7 +34,7 @@ final class Plugin
 	{
 		(new Settings())->register();
 
-		// Create or upgrade the agent-activity table on admin load. The migrator
+		// Create or upgrade the Site tools activity table on admin load. The migrator
 		// no-ops cheaply once the schema version matches, so running it on every
 		// admin request is safe (this is an admin-only plugin).
 		add_action('admin_init', [new ActivityMigrator(), 'maybeMigrate']);
@@ -43,7 +43,7 @@ final class Plugin
 		// controller hooks itself onto rest_api_init.
 		(new ActivityRestController())->register();
 
-		// Server-rendered "Agent activity" review screen under Tools. Reads the
+		// Server-rendered "Site tools activity" review screen under Tools. Reads the
 		// activity store; manage_options only.
 		(new ActivityScreen())->register();
 

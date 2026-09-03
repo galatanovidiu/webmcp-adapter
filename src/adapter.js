@@ -2,12 +2,12 @@
  * WebMCP Adapter — browser adapter.
  *
  * Maps frontend WordPress abilities (Abilities API client store) onto the
- * browser WebMCP API so in-browser AI agents can discover and run them as
- * tools.
+ * browser WebMCP API so ChatGPT Work and Codex can discover and run them as
+ * Site tools in the ChatGPT desktop app's built-in browser.
  *
  * Server-registered abilities deliberately stay on the server-side MCP/REST
  * surfaces. Keeping this page catalog frontend-only also keeps it within the
- * practical inventory accepted by browser agents such as Codex Site tools.
+ * practical inventory accepted by ChatGPT Work and Codex Site tools.
  */
 
 import {
@@ -388,7 +388,7 @@ function registerAbilityAsTool( ability ) {
 }
 
 /**
- * Mounts the agent-activity log panel once and returns its list element.
+ * Mounts the Site tools activity log panel once and returns its list element.
  *
  * Builds a fixed bottom-right panel (a convenience signal, NOT a native WP admin
  * notice and NOT an audit record): a header with the title, a collapse/expand
@@ -409,7 +409,7 @@ function mountActivityLog() {
 
 	const panel = document.createElement( 'section' );
 	panel.id = 'webmcp-activity-log';
-	panel.setAttribute( 'aria-label', 'WebMCP agent activity' );
+	panel.setAttribute( 'aria-label', 'ChatGPT Work and Codex Site tools activity' );
 	panel.style.cssText =
 		'position:fixed;bottom:16px;right:16px;z-index:2147483646;width:320px;' +
 		'max-width:calc(100% - 32px);background:#fff;color:#1e1e1e;' +
@@ -424,7 +424,7 @@ function mountActivityLog() {
 
 	const title = document.createElement( 'span' );
 	title.id = 'webmcp-activity-log-title';
-	title.textContent = 'WebMCP agent activity';
+	title.textContent = 'ChatGPT Work and Codex Site tools activity';
 	title.style.cssText = 'flex:1;font-weight:600;font-size:13px;';
 
 	// Hidden by default; revealed when a write/destructive entry arrives collapsed.
@@ -478,7 +478,7 @@ function mountActivityLog() {
 }
 
 /**
- * Builds one agent-activity entry and adds it to the log list.
+ * Builds one Site tools activity entry and adds it to the log list.
  *
  * Shared by live logging ({@link logActivity}) and server hydration
  * ({@link hydrateActivityLog}) so both render identical DOM. Each entry shows the
@@ -558,7 +558,7 @@ function appendActivityEntry(
 }
 
 /**
- * Appends one agent-activity entry to the log panel (newest first) and records it.
+ * Appends one Site tools activity entry to the log panel (newest first) and records it.
  *
  * Lazy-mounts the panel via {@link mountActivityLog} so it appears on the first
  * entry, not before, then renders the entry via {@link appendActivityEntry} (newest

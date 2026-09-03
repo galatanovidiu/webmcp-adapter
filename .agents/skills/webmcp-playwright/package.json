@@ -3,7 +3,7 @@
 	"version": "1.0.0",
 	"private": true,
 	"type": "module",
-	"description": "Playwright driver for the WebMCP adapter (uses system Chrome, no bundled browser).",
+	"description": "Test-only system-Chrome driver for WordPress Site tools built for ChatGPT Work and Codex in the ChatGPT desktop app's built-in browser.",
 	"dependencies": {
 		"playwright": "^1.49.0"
 	}

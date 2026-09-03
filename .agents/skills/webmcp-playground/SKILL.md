@@ -1,22 +1,28 @@
 ---
 name: webmcp-playground
-description: One-command, disposable WordPress Playground for testing the frontend-only WebMCP adapter — no MySQL, local install, companion plugin, or build. Boots a real-HTTP WP 7.0 with the adapter mounted and active, then drives its tools via the webmcp-playwright skill. Use when the user wants a throwaway adapter test, smoke test, or repeatable setup. Triggers: "test in playground", "easy way to test", "try the plugin", "webmcp playground".
+description: One-command, disposable WordPress Playground for testing the frontend-only ChatGPT Work and Codex Site tools adapter — no MySQL, local install, companion plugin, or build. Boots a real-HTTP WP 7.0 with the adapter mounted and active, then drives its tools via the webmcp-playwright skill. Use when the user wants a throwaway adapter test, smoke test, or repeatable setup. Triggers: "test in playground", "easy way to test", "try the plugin", "webmcp playground".
 ---
 
-# WebMCP in Playground (easy, disposable test)
+# ChatGPT Work and Codex Site tools in Playground
 
-The fastest way to see the WebMCP adapter working — for you or anyone else with the repo.
+The fastest way to test the WordPress Site tools built for ChatGPT Work and Codex.
 No MySQL or local database setup, no `wp server`, no build step. One script boots a real-HTTP WordPress 7.0 in
 [WordPress Playground](https://wordpress.github.io/wordpress-playground/) with
 `webmcp-adapter` mounted and active, then uses the
 [webmcp-playwright](../webmcp-playwright/SKILL.md) skill to list and execute the tools.
 
+The product acceptance target is ChatGPT Work or Codex in the ChatGPT desktop
+app's built-in browser. Playground plus system Chrome is a deterministic page-side
+regression harness; it does not reproduce the desktop product's discovery, safety,
+or activity-review UI.
+
 ## Why this works (the important part)
 
 `@wp-playground/cli server` serves WordPress over a **real HTTP port** (`:9400`) — NOT the
-`playground.wordpress.net` iframe. So it looks like a normal localhost site, and WebMCP
-behaves exactly as on a full install. The plugin is **mounted live** from the repo, so
-edits to PHP or `src/adapter.js` show up on reload — same no-build flow as the local site.
+`playground.wordpress.net` iframe. This provides a normal top-level localhost
+document for page-side WebMCP regression tests. The plugin is **mounted live** from
+the repo, so edits to PHP or `src/adapter.js` show up on reload — the same no-build
+flow as the local site.
 
 ## Prerequisites
 
