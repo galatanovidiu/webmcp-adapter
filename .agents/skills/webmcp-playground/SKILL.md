@@ -87,8 +87,8 @@ lands on the frontend.
 It is a standard Playground blueprint — you can also paste it into the live editor at
 `playground.wordpress.net` (it would need the plugins fetched from a URL rather than mounted
 from disk, but the steps are the shareable part).
-It also seeds the three retired exposure/confirmation options with restrictive or
-unsafe legacy values so the live suite proves the runtime ignores them. The fixture
+It also seeds the three retired pre-page-scoping options with legacy values so the
+live suite proves the runtime ignores them. The fixture
 adds tools only on its two plugin-owned admin pages, so the core page inventories
 remain unchanged.
 
@@ -110,3 +110,5 @@ Playground is fully ephemeral — its SQLite database lives only in a temp dir a
   stop an unknown process that already owns the configured port.
 - Compatible block-editor screens expose the complete 17-tool inventory;
   `save-post` still requires its in-page confirmation.
+- The fixture also registers `webmcp_note`, a private REST-enabled post type used
+  only to prove block-editor selection without a hard-coded post-type list.

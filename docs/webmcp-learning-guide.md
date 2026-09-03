@@ -17,7 +17,7 @@ path. It is not a generic browser-agent adapter or a backend MCP integration.
 
 A normal web page can register named JavaScript functions as structured tools on
 `document.modelContext`. When that page is open in the ChatGPT desktop app's
-the built-in browser, ChatGPT Work or Codex can discover its top-level imperative tools, select one,
+built-in browser, ChatGPT Work or Codex can discover its top-level imperative tools, select one,
 send schema-shaped arguments, and receive the value returned by the page's
 callback. The callback runs in the live page, so it can use the application's
 existing JavaScript state, DOM, signed-in session, and normal backend APIs. The
@@ -281,40 +281,34 @@ not make a website trustworthy.
 This repository already follows a design that fits the current ChatGPT Work and Codex product
 boundary:
 
-- [`src/adapter.js`](../src/adapter.js) runs in the top-level wp-admin document and
-  projects only frontend abilities marked `clientRegistered` and rejects records
-  also marked `serverRegistered`. It does not project REST-backed server abilities.
-- It provides a stable, gated inventory for each page load: seven read tools by
-  default, eight additional unsaved editor-write tools when writes are enabled,
-  and the separately gated `save-post` persistence tool when destructive tools are
-  enabled. The gates are read once from module data, so changing a setting requires
-  a reload before the document's inventory changes.
-- It reads the current ability store immediately, subscribes to that store, and
-  attempts registrations for frontend abilities that arrive later. An ability is
-  marked registered only after `registerTool()` resolves; a failed registration
-  remains eligible for a later retry.
-- The current synchronizer is additive. Its `registered` and `pending` sets prevent
-  duplicate work, but it does not supply registration abort controllers and does
-  not mirror ability removal or same-name definition updates into WebMCP. We should
-  not claim that it does.
-- Editor abilities call [`getEditor()`](../src/abilities/store.js) at execution
-  time. They therefore verify that the live tab is still editing a post instead of
-  trusting the context that existed when the agent discovered the tool. This is the
-  right defense against stale page or SPA state.
-- The adapter reads the invocation signal when the client supplies it. It checks
-  before execution, listens while a destructive confirmation is open, and checks
-  again immediately before dispatch. It does not pass that signal into
-  `executeAbility()`, so cancellation after the ability starts is not a guaranteed
-  stop or rollback.
-- Destructive persistence has an application-owned, in-page confirmation. This is
-  separate from the built-in browser's safety review and from WordPress backend
-  authorization.
+- [`src/adapter.js`](../src/adapter.js) runs in eligible top-level frontend and
+  wp-admin documents. It projects only frontend Abilities marked
+  `clientRegistered` and rejects any record also marked `serverRegistered`.
+- Providers are ordinary WordPress Script Modules loaded only on applicable pages.
+  Anonymous frontend, authenticated frontend, generic wp-admin, General Settings,
+  compatible block editors, and authentication screens therefore have different
+  exact inventories.
+- WordPress Ability names such as `webmcp/editor-context` project to collision-safe
+  WebMCP names such as `webmcp.editor-context`.
+- The synchronizer holds one registration-scoped abort controller and definition
+  fingerprint per Ability. It handles late registration, removal, and conservative
+  same-name replacement. Failed registration remains retryable.
+- Editor Abilities call [`getEditor()`](../src/abilities/store.js) at execution
+  time. General Settings and third-party fixture callbacks likewise revalidate
+  their current DOM, application state, and permissions immediately before acting.
+- Unsaved writes are classified as `reversible`. `webmcp.save-post` is
+  `consequential`; every call opens the trusted in-page confirmation. Mutations
+  with missing or invalid risk metadata are not projected.
+- Every eligible page starts with one minimized activity control. Completed
+  attempts send one bounded, redacted backend event; observability failure never
+  changes the Ability result.
+- The adapter observes invocation cancellation before confirmation, while the
+  dialog is pending, and immediately before execution. Cancellation after an
+  Ability has started is not a guaranteed stop or rollback.
 
-This leads to a practical rule for the adapter: keep the top-level inventory stable
-within one page load, make every callback inspect current editor state, and use a
-reload after exposure-setting changes. The subscription supports late additions,
-but until current Site tools refresh behavior is verified, those additions should not
-be the only way a critical tool becomes discoverable.
+The practical rule is: let the document's loaded providers define the inventory,
+rediscover after full navigation, and make every callback defend against stale
+same-document state.
 
 ## Implementation checklist for ChatGPT Work and Codex Site tools
 

@@ -23,19 +23,20 @@ const context = await chromium.launchPersistentContext(profileDir, {
 });
 ```
 
-Prefer the standard API:
+Use the current imperative API. Chrome's documentation specifies JSON-string input
+for manual `executeTool()` calls, while some deployed builds accept an object. The
+drivers detect the shape once with a harmless read:
 
 ```js
 const tools = await document.modelContext.getTools();
 const tool = tools.find(({ name }) => name === 'webmcp.editor-context');
-const result = await document.modelContext.executeTool(tool, {});
+const result = await document.modelContext.executeTool(tool, '{}');
 ```
 
 Current Chrome may expose `inputSchema` as a JSON string. Parse it before printing
-or asserting it. Some builds also retain the earlier JSON-string input shape for
-standard `executeTool`; detect that shape once with the harmless
-`webmcp.editor-context` read and never retry a write after an execution error.
-Chrome 149's `navigator.modelContextTesting.listTools()` and
+or asserting it. Detect the execution input shape once with a harmless readonly,
+no-input tool and never retry a write after an execution error. Chrome 149's
+`navigator.modelContextTesting.listTools()` and
 `executeTool(name, jsonString)` remain fallback-only.
 
 ## Setup
@@ -136,6 +137,10 @@ clean up the orphaned modal explicitly when it cancels only the outer invocation
 - `title`, schema, `readOnlyHint`, and `untrustedContentHint` mapping;
 - structured tool results;
 - Dashboard and post-editor context;
+- page and compatible custom-post-type editors without a post-type allowlist;
+- Site Editor inventory across an in-shell route change;
+- anonymous and authenticated home and singular frontend pages;
+- login, password-reset, and registration screens with no adapter assets or UI;
 - General Settings partial staging, live validation, preset/custom date and time
   formats, sensitive-email redaction, feedback cleanup, and no form submission or
   persistence (`tools/verify-general-form.mjs`);
@@ -146,20 +151,21 @@ clean up the orphaned modal explicitly when it cancels only the outer invocation
   (`tools/verify-activity-ui.mjs`);
 - navigation followed by rediscovery;
 - provider-owned page inventories, read/write execution, reversal, activity
-  definitions, and late unregister/register lifecycle
+  definitions, stale-handle rejection, and late unregister/register lifecycle
   (`tools/verify-provider-fixture.mjs`);
 - no request to `/wp-abilities/v1/abilities`.
 
 ## Gotchas
 
-- Standard `executeTool` is specified to receive an input object. Detect and cache
-  transitional string-input behavior with a read-only probe before executing a
-  requested tool. The Chrome 149 testing fallback receives a JSON string.
+- Current Chrome documentation specifies a JSON string for manual `executeTool`
+  input, while some builds accept an object. Detect and cache the shape with a
+  readonly probe before executing a requested tool. The Chrome 149 testing
+  fallback receives a JSON string.
 - Tool handles are document-bound; fetch again after navigation or reload.
 - Block `clientId` values change after an editor reparse; read immediately before
   targeted mutations.
 - `src/adapter.js` is served raw. Reload after edits or bump the plugin version.
-- Which tools appear depends on the two exposure settings.
+- Tool inventory is selected by the current page's loaded Ability providers.
 
 ## Cleanup
 

@@ -1,151 +1,206 @@
-# Developing WordPress Site tools for ChatGPT Work and Codex
+# Develop and verify WordPress Site tools
 
-The product and acceptance target is ChatGPT Work and Codex Site tools in the
-ChatGPT desktop app's built-in browser. System Chrome remains useful only as a
-deterministic protocol regression harness.
+The acceptance target is ChatGPT Work and Codex Site tools in the ChatGPT desktop
+app's built-in browser. Current system Chrome provides deterministic page-side
+regression coverage; it does not replace product acceptance.
 
-## Local environment with wp-env
+## Requirements
 
-The repository's [`.wp-env.json`](../.wp-env.json) boots WordPress 7.0 and mounts
-only this plugin:
+- WordPress 7.0 or later;
+- PHP 8.1 or later;
+- Node.js 22 or later;
+- current system Chrome for deterministic suites; and
+- the latest ChatGPT desktop app with Site tools available for built-in-browser
+  acceptance.
 
-```json
-{
-  "core": "WordPress/WordPress#7.0",
-  "plugins": ["."],
-  "port": 8888,
-  "testsEnvironment": false
-}
+Run `npm ci` once before repository checks. The Playwright skill installs its own
+library dependency without downloading a browser:
+
+```bash
+PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
+  npm install --prefix .agents/skills/webmcp-playwright
 ```
 
-Requirements: Docker and Node.js 22 or later.
+## Local WordPress environments
+
+The repository's [`.wp-env.json`](../.wp-env.json) mounts only this plugin and
+tracks the WordPress 7.0 branch:
 
 ```bash
 npx wp-env start
-```
-
-- Site: <http://localhost:8888>
-- Admin: <http://localhost:8888/wp-admin/>
-- Credentials: `admin` / `password`
-
-Useful checks:
-
-```bash
 npx wp-env run cli wp core version
 npx wp-env run cli wp plugin list --status=active
-npx wp-env stop
 ```
 
-The adapter deliberately does not install or load an abilities catalog. Only
-frontend abilities marked `clientRegistered` are projected into WebMCP.
+The default site is <http://localhost:8888>; wp-env credentials are
+`admin` / `password`.
 
-## Disposable WordPress Playground
-
-When Docker is unavailable or port 8888 is busy, use the committed Playground
-workflow:
+Use the committed Playground workflow for the exact acceptance version and the
+provider fixture:
 
 ```bash
-.agents/skills/webmcp-playground/webmcp-playground.sh up
+.agents/skills/webmcp-playground/webmcp-playground.sh test
 ```
 
-It starts a real-HTTP WordPress 7.0 instance, mounts this plugin live, activates it,
-and reports the localhost URL. The SQLite state is disposable. Run `down` when
-finished.
+It boots a real-HTTP WordPress 7.0.4/PHP 8.3 process at
+<http://127.0.0.1:9400>, mounts the adapter and acceptance fixture before
+installation, verifies the runtime version, lists the 17 editor tools, and calls
+`webmcp.editor-context`. The SQLite database is disposable.
 
-## Test in ChatGPT Work or Codex
+## Quick deterministic checks
 
-Use GPT-5.6 Sol or GPT-5.6 Terra in the latest ChatGPT desktop app. Confirm **Enable
-site tools** is on under **Settings → Browser → Permissions**.
-
-1. Start wp-env or Playground.
-2. Open the direct wp-admin URL in the ChatGPT desktop app's built-in browser. Do
-   not embed it in an iframe.
-3. On the Dashboard, inspect Site tools. The default inventory must stabilize at
-   exactly seven `webmcp-*` read tools.
-4. Run `webmcp-editor-context`; it must return `inEditor: false`.
-5. Open `/wp-admin/post-new.php?post_type=page`, rediscover the tools, and run
-   `webmcp-editor-context` plus `webmcp-read-blocks`. The context must report
-   `inEditor: true`.
-
-For the write path, enable **Enable write tools** under **Settings → WebMCP** and
-reload the editor. The inventory must contain 15 tools. Exercise an unsaved
-`insert-blocks → read-blocks → undo` sequence and verify the editor returns to its
-initial state.
-
-For the persistence path, also enable **Enable destructive tools**. The inventory
-must contain 16 tools, including `webmcp-save-post`. Verify the decline path before
-approving a save in a disposable environment.
-
-After each navigation or reload, fetch the tools again. WebMCP registrations belong
-to one document and old handles become stale.
-
-## Test with system Chrome
-
-The committed drivers use current system Chrome and prefer the standard imperative
-API:
-
-- `document.modelContext.getTools()`
-- `document.modelContext.executeTool(registeredTool, inputObject)`
-
-Chrome 149's `modelContextTesting` hook remains a fallback and still receives a
-JSON string. A transitional Chrome build may expose the standard API while still
-expecting that older string input. The harness detects the input shape once with
-the harmless `webmcp-editor-context` read and never retries a write after an
-execution error. Playwright's bundled
-Chromium is not a substitute for system Chrome.
+The Playwright driver opens any same-origin page and uses current system Chrome:
 
 ```bash
-WP_URL=http://localhost:8888 \
-  node .agents/skills/webmcp-playwright/driver.mjs names
+WP_URL=http://127.0.0.1:9400 HEADLESS=1 \
+  node .agents/skills/webmcp-playwright/driver.mjs names \
+  --url /wp-admin/
 
-WP_URL=http://localhost:8888 \
-  node .agents/skills/webmcp-playwright/driver.mjs call webmcp-editor-context '{}'
+WP_URL=http://127.0.0.1:9400 HEADLESS=1 \
+  node .agents/skills/webmcp-playwright/driver.mjs call \
+  webmcp.get-page-context '{}' --url /wp-admin/
+
+WP_URL=http://127.0.0.1:9400 HEADLESS=1 \
+  node .agents/skills/webmcp-playwright/driver.mjs names \
+  --url / --anonymous
 ```
 
-The driver fails when WebMCP is unavailable or the page registers zero tools. It
-normalizes Chrome builds that expose `inputSchema` as a JSON string.
+The driver prefers `document.modelContext.getTools()` and
+`document.modelContext.executeTool(tool, inputObject)`. It detects transitional
+string-input behavior once with a harmless readonly no-input tool. Chrome 149's
+testing API remains fallback-only.
 
-For the larger editor flow:
-
-```bash
-WP_URL=http://localhost:8888 \
-  node .agents/skills/webmcp-playwright/verify-frontend.mjs
-```
-
-The raw CDP CLI provides the same list/call primitives:
+The raw CDP CLI provides the same primitives in one persistent Chrome profile:
 
 ```bash
-WP_URL=http://localhost:8888 WP_USER=admin WP_PASS=password \
-  node tools/webmcp.mjs setup
+export WP_URL=http://127.0.0.1:9400 WP_USER=admin WP_PASS=password
+node tools/webmcp.mjs setup /wp-admin/
 node tools/webmcp.mjs list
-node tools/webmcp.mjs call webmcp-editor-context '{}'
+node tools/webmcp.mjs call webmcp.get-page-context '{}'
+node tools/webmcp.mjs setup '/wp-admin/post-new.php?post_type=page'
+node tools/webmcp.mjs call webmcp.editor-context '{}'
 ```
 
-## Regression checklist
+`tools/webmcp.mjs batch` runs same-page calls only. Use normal browser navigation
+between pages, then list the new document's tools.
 
-- Only records with `clientRegistered: true` and without `serverRegistered: true`
-  become tools, even if another plugin populates the shared store.
-- The default inventory is 7 tools; write mode is 15; write plus destructive mode
-  is 16.
-- The inventory stays available after the store settles and remains frontend-only.
-- No request is made to `/wp-abilities/v1/abilities`.
-- Registration rejection does not cause an unhandled promise rejection or mark the
-  ability as successfully registered.
-- Structured ability results remain structured in ChatGPT Work and Codex.
-- When the browser forwards the callback signal, cancelling an invocation removes
-  a pending confirmation. Record clients that cancel only the outer call without
-  forwarding a signal.
-- Tool discovery and execution work after a full navigation and rediscovery.
+## Complete deterministic acceptance
 
-## Cache and cleanup
+Run pure tests and repository formatting first:
 
-`src/adapter.js` is served raw with no build step. Reload after changing it; the
-plugin version is also used as the module cache key.
+```bash
+npm test
+npm run test:php
+npm run format
+git diff --check
+```
+
+With the WordPress 7.0.4 Playground server running, execute every system-Chrome
+suite:
+
+```bash
+WP_URL=http://127.0.0.1:9400 HEADLESS=1 \
+  node tools/verify-page-scoping.mjs
+WP_URL=http://127.0.0.1:9400 HEADLESS=1 \
+  node tools/verify-destinations.mjs
+WP_URL=http://127.0.0.1:9400 HEADLESS=1 \
+  node tools/verify-general-form.mjs
+WP_URL=http://127.0.0.1:9400 HEADLESS=1 \
+  node tools/verify-activity-ui.mjs
+WP_URL=http://127.0.0.1:9400 HEADLESS=1 \
+  node .agents/skills/webmcp-playwright/verify-frontend.mjs
+WP_URL=http://127.0.0.1:9400 HEADLESS=1 \
+  node tools/verify-observability.mjs
+WP_URL=http://127.0.0.1:9400 HEADLESS=1 \
+  node tools/verify-provider-fixture.mjs
+```
+
+The page-scoping suite covers Dashboard, General Settings, post, page, compatible
+custom-post-type and Site editors, a Site Editor in-shell route change, both
+fixture pages, authenticated/anonymous home and singular pages, and three
+authentication screens. Other suites cover rendered destination navigation,
+General Settings staging, minimized activity accessibility, editor operations,
+confirmation and cancellation, observability, and provider removal/restoration.
+
+Run the PHP-in-WordPress migration/retention test in its own disposable runtime:
+
+```bash
+npx @wp-playground/cli@latest php \
+  --wp=https://wordpress.org/wordpress-7.0.4.zip \
+  --php=8.3 \
+  --blueprint=.agents/skills/webmcp-playground/blueprint.json \
+  --mount-before-install="$PWD:/wordpress/wp-content/plugins/webmcp-adapter" \
+  --mount-before-install="$PWD/tests/fixtures/webmcp-provider:/wordpress/wp-content/plugins/webmcp-provider" \
+  -- /wordpress/wp-content/plugins/webmcp-adapter/tools/verify-observability.php
+```
+
+Run uninstall verification last in another fresh disposable process. It
+intentionally deletes this plugin's table, options, scheduled event, and rate-limit
+transients inside that process:
+
+```bash
+npx @wp-playground/cli@latest php \
+  --wp=https://wordpress.org/wordpress-7.0.4.zip \
+  --php=8.3 \
+  --blueprint=.agents/skills/webmcp-playground/blueprint.json \
+  --mount-before-install="$PWD:/wordpress/wp-content/plugins/webmcp-adapter" \
+  --mount-before-install="$PWD/tests/fixtures/webmcp-provider:/wordpress/wp-content/plugins/webmcp-provider" \
+  -- /wordpress/wp-content/plugins/webmcp-adapter/tools/verify-uninstall.php
+```
+
+## Built-in-browser acceptance
+
+Open each target directly in Codex's built-in browser, wait for registration to
+settle, inspect Site tools, and rediscover after every navigation or reload.
+
+Verify:
+
+1. anonymous home and Sample Page: two exact tools;
+2. authenticated home and Sample Page: three exact tools and rendered toolbar
+   destinations;
+3. Dashboard: two exact tools and a returned admin URL that normal browser
+   navigation can open;
+4. General Settings: three exact tools, partial staging, visible review feedback,
+   reload discard, no persistence, and Administration Email redaction;
+5. post, page, and `webmcp_note` editors: 17 exact tools, readonly calls, and an
+   unsaved insert/read/undo round trip;
+6. Site Editor: 17 exact tools before and after the visible **Pages** in-shell
+   route change;
+7. the primary and secondary fixture pages: four and three exact tools,
+   read/write/reversal, and removal/restoration after the documented settling
+   interval;
+8. login, password-reset, and registration screens: no Site tools and no plugin
+   activity UI; and
+9. consequential save decline and approval only in the disposable environment,
+   using the normal built-in review and trusted in-page confirmation.
+
+Do not replace a rejected built-in-browser call with a hidden execution path.
+Record product safety-review, discovery, and callback-cancellation limitations
+exactly as observed.
+
+## What each suite protects
+
+- Provenance filtering and zero server Ability-catalog requests.
+- Dot-projected names, collision rejection, registration failure, removal,
+  replacement, stale-handle rejection, and late registration.
+- Exact page inventories with no post-type list.
+- Structured results and accurate `title`, schema, `readOnlyHint`, and
+  `untrustedContentHint` mapping.
+- General Settings validation, native events, preset/custom formats, feedback
+  cleanup, no submission/request/persistence, and sensitive redaction.
+- Editor read/write/undo and consequential decline/approval/cancellation/expiry.
+- Minimized accessible activity UI, isolated styles, session state, and safe
+  untrusted-text rendering.
+- Authenticated and anonymous ingestion, payload and rate bounds, exporter hook,
+  retention, additive legacy migration, and safe administrator review.
+- Upgrade preservation and uninstall-only deletion of retired option values.
+
+## Cleanup
 
 ```bash
 .agents/skills/webmcp-playground/webmcp-playground.sh down
 npx wp-env stop
 ```
 
-For current ChatGPT Work and Codex availability and limitations, see the
-[official Site tools documentation](https://learn.chatgpt.com/docs/webmcp).
+`src/adapter.js` is served raw. There is no build step; reload after a source
+change or change the plugin version when preparing a release.
