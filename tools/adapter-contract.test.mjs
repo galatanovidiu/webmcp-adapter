@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
 	classifyAbilityRisk,
+	requiresConfirmationForRisk,
 	toAbilityName,
 	toWebMcpToolName,
 } from '../src/adapter-contract.js';
@@ -80,4 +81,13 @@ test( 'mutations with invalid risk metadata fail closed', () => {
 			{ ok: false, risk: null, diagnostic: 'invalid-risk' }
 		);
 	}
+} );
+
+test( 'only consequential and privileged risks require in-page confirmation', () => {
+	assert.equal( requiresConfirmationForRisk( 'read' ), false );
+	assert.equal( requiresConfirmationForRisk( 'reversible' ), false );
+	assert.equal( requiresConfirmationForRisk( 'persistent' ), false );
+	assert.equal( requiresConfirmationForRisk( 'consequential' ), true );
+	assert.equal( requiresConfirmationForRisk( 'privileged' ), true );
+	assert.equal( requiresConfirmationForRisk( 'unknown' ), false );
 } );

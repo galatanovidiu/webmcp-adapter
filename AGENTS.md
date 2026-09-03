@@ -80,6 +80,6 @@ generic MCP bridge or backend ability catalog.
 - Assert core provider names use the collision-safe dot projection and no request is made to
   `/wp-abilities/v1/abilities`.
 - Exercise Dashboard, post editor, Site Editor, navigation/rediscovery, unsaved
-  insert/read/undo, destructive decline/approve, registration rejection, and the
+  insert/read/undo, consequential decline/approve, registration rejection, and the
   browser's callback-signal behavior.
 - `src/adapter.js` is served raw; there is no build step.

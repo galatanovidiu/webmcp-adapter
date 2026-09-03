@@ -9,6 +9,8 @@ const MUTATION_RISKS = new Set( [
 	'privileged',
 ] );
 
+const CONFIRMATION_RISKS = new Set( [ 'consequential', 'privileged' ] );
+
 /**
  * Converts a WordPress Ability name into an injective WebMCP tool name.
  *
@@ -59,4 +61,18 @@ export function classifyAbilityRisk( ability ) {
 		diagnostic:
 			typeof risk === 'undefined' ? 'missing-risk' : 'invalid-risk',
 	};
+}
+
+/**
+ * Returns whether the validated risk class requires in-page confirmation.
+ *
+ * Confirmation follows consequence, not WordPress's broader destructive hint.
+ * Persistent-but-routine writes can use their owning application flow, while
+ * consequential and privileged actions always require explicit supervision.
+ *
+ * @param {*} risk Candidate risk value.
+ * @return {boolean} Whether the risk requires confirmation.
+ */
+export function requiresConfirmationForRisk( risk ) {
+	return CONFIRMATION_RISKS.has( risk );
 }

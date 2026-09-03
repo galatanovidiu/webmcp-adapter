@@ -32,6 +32,12 @@ WP="${WP:-7.0}"
 PHP="${PHP:-8.3}"
 PW_VERSION="${PW_VERSION:-latest}"
 WP_URL="http://127.0.0.1:$PORT"
+WP_SOURCE="$WP"
+if [[ "$WP" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+	# The Playground resolver may interpret a major.minor prefix as a newer API
+	# response. Use WordPress.org's immutable release archive for an exact pin.
+	WP_SOURCE="https://wordpress.org/wordpress-$WP.zip"
+fi
 
 RUNDIR="${TMPDIR:-/tmp}/webmcp-playground-$PORT"
 LOG="$RUNDIR/server.log"
@@ -42,6 +48,20 @@ note() { printf '\033[36m›\033[0m %s\n' "$*" >&2; }
 die()  { printf '\033[31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
 
 server_up() { curl -fsS -o /dev/null "$WP_URL/" 2>/dev/null; }
+
+verify_wordpress_version() {
+	[[ "$WP" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || return 0
+	local runtime_version
+	runtime_version="$(
+		curl -fsS "$WP_URL/" |
+			sed -n 's/.*<meta name="generator" content="WordPress \([^"]*\)".*/\1/p' |
+			head -n 1
+	)"
+	case "$runtime_version" in
+		"$WP"|"$WP".*) note "Runtime: WordPress $runtime_version" ;;
+		*) die "Expected WordPress $WP.x, found ${runtime_version:-an unknown version}." ;;
+	esac
+}
 
 managed_pid() {
 	[ -f "$PIDFILE" ] || return 1
@@ -88,9 +108,9 @@ cmd_up() {
 
 	note "Booting Playground (WP $WP, PHP $PHP, port $PORT)… first run downloads WP, ~1 min."
 	nohup npx "@wp-playground/cli@$PW_VERSION" server \
-		--wp="$WP" --php="$PHP" --port="$PORT" \
+		--wp="$WP_SOURCE" --php="$PHP" --port="$PORT" \
 		--blueprint="$blueprint" \
-		--mount="$ADAPTER_DIR:/wordpress/wp-content/plugins/webmcp-adapter" \
+		--mount-before-install="$ADAPTER_DIR:/wordpress/wp-content/plugins/webmcp-adapter" \
 		>"$LOG" 2>&1 &
 	local server_pid=$!
 	printf '%s\n' "$server_pid" > "$PIDFILE"
@@ -103,6 +123,7 @@ cmd_up() {
 		sleep 2
 		if [ "$i" = "120" ]; then die "Playground did not come up in time. See $LOG"; fi
 	done
+	verify_wordpress_version
 	note "Ready: $WP_URL  (admin / password)"
 	note "Dashboard: $WP_URL/wp-admin/"
 }
