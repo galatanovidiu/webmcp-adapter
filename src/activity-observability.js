@@ -6,6 +6,7 @@
  */
 
 const FAILURE_FLAGS = [
+	'applied',
 	'ok',
 	'success',
 	'saved',
