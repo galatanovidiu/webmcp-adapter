@@ -11,8 +11,9 @@ Last updated: 3 September 2026.
   [`implementation-plan.md`](implementation-plan.md).
 - Batch 0 merged through pull request #9.
 - Batch 1 merged through pull request #10.
-- Batch 2 is complete on `feat/page-scoped-base-providers`; destination extraction
-  has not started.
+- Batch 2 merged through pull request #11.
+- Batch 3 is complete on `feat/rendered-destinations`; editor gate removal has not
+  started.
 - The user authorized uninterrupted implementation, verification, pull requests,
   and merges through the remaining approved batches.
 
@@ -50,8 +51,8 @@ normal browser opens them.
 
 ## Next action
 
-Deliver and merge Batch 2, then start Batch 3 from updated trunk. Batch 3 owns
-rendered destination extraction and removal of the navigation-execution Ability.
+Deliver and merge Batch 3, then start Batch 4 from updated trunk. Batch 4 owns the
+always-exposed editor provider, settings removal, and consequential save policy.
 
 ## Session update: Batch 0
 
@@ -265,6 +266,74 @@ destination discovery and remove `webmcp/navigate` in Batch 3.
 Commit/push status: three atomic Batch 2 commits are on
 `feat/page-scoped-base-providers`, including this handoff update. Push and
 pull-request delivery follow immediately; no release was created.
+
+## Session update: Batch 3
+
+Date: 3 September 2026.
+
+Batch and scope: rendered destination discovery plus navigation-Ability removal.
+No editor exposure-policy, form, activity, or backend observability changes.
+
+Completed:
+
+- Implemented shared destination normalization with stable IDs, same-origin URL
+  resolution, first-rendered-order deduplication, and rejection of placeholders,
+  credentials, external protocols/origins, authentication screens, nonce-bearing
+  links, and consequential action URLs.
+- `list-site-destinations` now reads visible semantic navigation landmarks while
+  excluding the admin toolbar and arbitrary navigation/content links inside main
+  article content.
+- `list-admin-destinations` now reads the full rendered wp-admin menu or the
+  authenticated frontend admin toolbar, including provider-added entries without a
+  synthetic URL registry.
+- Added closed output schemas for destination results and page context. Removed the
+  unsupported `uri` output format after WordPress 7.0's client validator rejected
+  that schema dialect; URL safety remains enforced in code and live tests.
+- Deleted `webmcp/navigate`, removed it from every active inventory, and changed
+  navigation verification to open a returned URL through the ordinary browser.
+
+Files changed:
+
+- `includes/Plugin.php`
+- `src/abilities/destinations.js`, both destination providers,
+  `src/abilities/page-context.js`, and `src/abilities/index.js`
+- Deleted `src/abilities/navigate.js`
+- `tools/destinations.test.mjs` and `tools/verify-destinations.mjs`
+- Active Playground, Playwright, CLI, page-matrix, and agent-skill files
+- `.agents/scratches/page-scoped-webmcp/handoff.md`
+
+Verification performed:
+
+- `npm test`: 23 passed, 0 failed.
+- `node tools/verify-destinations.mjs`: 13 passed, 0 failed on disposable WordPress
+  7.0. It proved real wp-admin and toolbar extraction, provider-added navigation,
+  exclusion of unsafe/action/auth/hidden/content links, stable result shape,
+  ordinary navigation to a returned URL, anonymous admin-destination exclusion,
+  and no server Ability-catalog request.
+- `.agents/skills/webmcp-playwright/verify-frontend.mjs`: 86 passed, 0 failed,
+  preserving every editor operation and verifying ordinary navigation plus
+  document rediscovery.
+- `node tools/verify-page-scoping.mjs --expect=batch3`: all seven rows passed:
+  Dashboard 2, General Settings 2, both editors 8, authenticated frontend 3,
+  anonymous frontend 2, authentication screen 0.
+- The agreed final matrix now has only General Settings and the two gated editor
+  rows red.
+- PHP/JavaScript/shell syntax, instruction validators, formatting checks, and
+  `git diff --check` passed.
+
+Open risks or failures:
+
+- Editor writes and `save-post` remain behind legacy settings until Batch 4, so the
+  two final editor inventory rows are still short of 17 tools.
+- General Settings remains at two tools until its staging provider arrives in
+  Batch 5.
+
+Exact next action: push and merge Batch 3, then make the block-editor provider
+always expose its 15 editor tools and remove the legacy settings/bypass in Batch 4.
+
+Commit/push status: three atomic Batch 3 commits are on
+`feat/rendered-destinations`, including this handoff update. Push and pull-request
+delivery follow immediately; no release was created.
 
 ## Session update template
 
