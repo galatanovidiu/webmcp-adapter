@@ -13,6 +13,36 @@ const sensitiveQueryParameters = [
 	'pass',
 	'pwd',
 ];
+const nullableString = { type: [ 'string', 'null' ] };
+const PAGE_CONTEXT_OUTPUT_SCHEMA = {
+	type: 'object',
+	properties: {
+		surface: {
+			type: 'string',
+			enum: [ 'frontend', 'wp-admin', 'unknown' ],
+		},
+		url: { type: 'string' },
+		pageType: nullableString,
+		objectType: nullableString,
+		objectId: { type: [ 'integer', 'null' ] },
+		screenId: nullableString,
+		postType: nullableString,
+		taxonomy: nullableString,
+		authenticated: { type: 'boolean' },
+	},
+	required: [
+		'surface',
+		'url',
+		'pageType',
+		'objectType',
+		'objectId',
+		'screenId',
+		'postType',
+		'taxonomy',
+		'authenticated',
+	],
+	additionalProperties: false,
+};
 
 registerAbility( {
 	name: 'webmcp/get-page-context',
@@ -25,6 +55,7 @@ registerAbility( {
 		properties: {},
 		additionalProperties: false,
 	},
+	output_schema: PAGE_CONTEXT_OUTPUT_SCHEMA,
 	meta: {
 		annotations: {
 			readonly: true,

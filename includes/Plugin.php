@@ -49,6 +49,9 @@ final class Plugin
 	/** @var string Shared first-party Ability category module. */
 	private const CATEGORY_MODULE_HANDLE = 'webmcp-adapter/category';
 
+	/** @var string Shared destination normalization module. */
+	private const DESTINATIONS_MODULE_HANDLE = 'webmcp-adapter/destinations';
+
 	/** @var string Page-context Ability provider module. */
 	private const PAGE_CONTEXT_MODULE_HANDLE = 'webmcp-adapter/page-context';
 
@@ -178,6 +181,13 @@ final class Plugin
 		);
 
 		wp_register_script_module(
+			self::DESTINATIONS_MODULE_HANDLE,
+			WEBMCP_ADAPTER_URL . 'src/abilities/destinations.js',
+			[],
+			WEBMCP_ADAPTER_VERSION
+		);
+
+		wp_register_script_module(
 			self::PAGE_CONTEXT_MODULE_HANDLE,
 			WEBMCP_ADAPTER_URL . 'src/abilities/page-context.js',
 			['@wordpress/abilities', self::CATEGORY_MODULE_HANDLE],
@@ -187,14 +197,22 @@ final class Plugin
 		wp_register_script_module(
 			self::SITE_DESTINATIONS_MODULE_HANDLE,
 			WEBMCP_ADAPTER_URL . 'src/abilities/list-site-destinations.js',
-			['@wordpress/abilities', self::CATEGORY_MODULE_HANDLE],
+			[
+				'@wordpress/abilities',
+				self::CATEGORY_MODULE_HANDLE,
+				self::DESTINATIONS_MODULE_HANDLE,
+			],
 			WEBMCP_ADAPTER_VERSION
 		);
 
 		wp_register_script_module(
 			self::ADMIN_DESTINATIONS_MODULE_HANDLE,
 			WEBMCP_ADAPTER_URL . 'src/abilities/list-admin-destinations.js',
-			['@wordpress/abilities', self::CATEGORY_MODULE_HANDLE],
+			[
+				'@wordpress/abilities',
+				self::CATEGORY_MODULE_HANDLE,
+				self::DESTINATIONS_MODULE_HANDLE,
+			],
 			WEBMCP_ADAPTER_VERSION
 		);
 
