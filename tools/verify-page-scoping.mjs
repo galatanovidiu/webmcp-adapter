@@ -56,7 +56,6 @@ const CURRENT_READ_NAMES = [
 	'webmcp.list-block-types',
 	'webmcp.list-patterns',
 	'webmcp.list-templates',
-	'webmcp.navigate',
 	'webmcp.read-blocks',
 ].sort();
 const CURRENT_WRITE_NAMES = [
@@ -120,8 +119,16 @@ const AGREED_INVENTORIES = {
 const BATCH_2_INVENTORIES = {
 	dashboard: [ ...ADMIN_BASE_NAMES ].sort(),
 	'general-settings': [ ...ADMIN_BASE_NAMES ].sort(),
-	'post-editor': [ ...ADMIN_BASE_NAMES, ...CURRENT_READ_NAMES ].sort(),
-	'site-editor': [ ...ADMIN_BASE_NAMES, ...CURRENT_READ_NAMES ].sort(),
+	'post-editor': [
+		...ADMIN_BASE_NAMES,
+		...CURRENT_READ_NAMES,
+		'webmcp.navigate',
+	].sort(),
+	'site-editor': [
+		...ADMIN_BASE_NAMES,
+		...CURRENT_READ_NAMES,
+		'webmcp.navigate',
+	].sort(),
 	'authenticated-frontend': [
 		...FRONTEND_BASE_NAMES,
 		'webmcp.list-admin-destinations',
@@ -130,14 +137,20 @@ const BATCH_2_INVENTORIES = {
 	'authentication-screen': [],
 };
 
+const BATCH_3_INVENTORIES = {
+	...BATCH_2_INVENTORIES,
+	'post-editor': [ ...ADMIN_BASE_NAMES, ...CURRENT_READ_NAMES ].sort(),
+	'site-editor': [ ...ADMIN_BASE_NAMES, ...CURRENT_READ_NAMES ].sort(),
+};
+
 function readExpectedMode() {
 	const option = process.argv.find( ( argument ) =>
 		argument.startsWith( '--expect=' )
 	);
 	const mode = option?.slice( '--expect='.length ) || 'agreed';
-	if ( ! [ 'current', 'batch2', 'agreed' ].includes( mode ) ) {
+	if ( ! [ 'current', 'batch2', 'batch3', 'agreed' ].includes( mode ) ) {
 		console.error(
-			'Usage: verify-page-scoping.mjs --expect=current|batch2|agreed'
+			'Usage: verify-page-scoping.mjs --expect=current|batch2|batch3|agreed'
 		);
 		process.exit( 1 );
 	}
@@ -351,6 +364,8 @@ try {
 					inventories,
 					expectedMode === 'batch2'
 						? BATCH_2_INVENTORIES
+						: expectedMode === 'batch3'
+						? BATCH_3_INVENTORIES
 						: AGREED_INVENTORIES
 			  );
 } finally {

@@ -94,9 +94,9 @@ whose schema requires no arguments.
 ## Expected inventory
 
 - Generic wp-admin: 2 base read tools.
-- Default block editor: 9 tools (2 admin base tools plus 7 editor reads).
-- Block editor with writes enabled: 17 tools.
-- Block editor with writes plus destructive enabled: 18 tools, including `save-post`.
+- Default block editor: 8 tools (2 admin base tools plus 6 editor reads).
+- Block editor with writes enabled: 16 tools.
+- Block editor with writes plus destructive enabled: 17 tools, including `save-post`.
 - Anonymous frontend: 2 base reads; authenticated frontend: 3 base reads.
 - No `core-*`, `og-*`, or other `serverRegistered` ability may appear.
 

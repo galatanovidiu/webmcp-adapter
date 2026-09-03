@@ -41,8 +41,8 @@ From the repository root:
 ```
 
 That boots Playground (first run downloads WP, ~1 min), opens the existing post editor,
-lists the registered tools, and executes one read tool. Expected: 9 tools (two admin
-base tools plus seven editor reads) and an `editor-context` result.
+lists the registered tools, and executes one read tool. Expected: 8 tools (two admin
+base tools plus six editor reads) and an `editor-context` result.
 The server stays up afterward so you can keep poking.
 
 ## Commands
@@ -64,7 +64,7 @@ Example:
 
 ## Options (env)
 
-- `ENABLE_WRITES=1` — also expose the non-destructive **write** tools (9 → 17). The
+- `ENABLE_WRITES=1` — also expose the non-destructive **write** tools (8 → 16). The
   script injects a `setSiteOptions` step that turns on `webmcp_enable_write_tools`. Default
   is reads-only, matching the plugin's secure default.
 - `PORT` (9400), `WP` (7.0), `PHP` (8.3), `PW_VERSION` (latest `@wp-playground/cli`).

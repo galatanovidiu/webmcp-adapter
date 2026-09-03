@@ -28,7 +28,6 @@ const EDITOR_READ_TOOL_NAMES = [
 	'webmcp.list-block-types',
 	'webmcp.list-patterns',
 	'webmcp.list-templates',
-	'webmcp.navigate',
 	'webmcp.read-blocks',
 ].sort();
 const READ_TOOL_NAMES = [...ADMIN_TOOL_NAMES, ...EDITOR_READ_TOOL_NAMES].sort();
@@ -221,7 +220,7 @@ try {
 	});
 	const writeTools = await stableTools(WRITE_TOOL_NAMES.length);
 	const writeNames = writeTools.map((tool) => tool.name).sort();
-	check('write-enabled editor inventory is the exact 17-tool set',
+	check('write-enabled editor inventory is the exact 16-tool set',
 		JSON.stringify(writeNames) === JSON.stringify(WRITE_TOOL_NAMES),
 		writeTools.map((tool) => tool.name).join(', '));
 	check('save-post remains hidden without destructive gate',
@@ -248,7 +247,7 @@ try {
 	// ---- Wait for tools ----
 	const tools = await stableTools(COMPLETE_TOOL_NAMES.length);
 	const names = tools.map((t) => t.name);
-	check('complete editor inventory is the exact 18-tool set',
+	check('complete editor inventory is the exact 17-tool set',
 		JSON.stringify([...names].sort()) === JSON.stringify(COMPLETE_TOOL_NAMES),
 		names.join(', '));
 	check('no server ability request was made', abilityRequests.length === 0,
@@ -753,20 +752,8 @@ try {
 	createdPostId = null;
 
 	console.log('\n== T15: navigation and rediscovery ==');
-	const [, navigationOutcome] = await Promise.all([
-		page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
-		executeTool('webmcp.navigate', { url: '/wp-admin/' }).then(
-			(value) => ({ completed: true, value }),
-			(error) => ({ completed: false, error: String(error) })
-		),
-	]);
-	check('navigate tool completed or was interrupted only by its own reload',
-		navigationOutcome.completed === true ||
-			/Execution context was destroyed|Cannot find context|Target page.*navigat/i.test(
-				navigationOutcome.error
-			),
-		JSON.stringify(navigationOutcome));
-	check('navigate reached the exact wp-admin destination',
+	await page.goto(`${WP_URL}/wp-admin/`, { waitUntil: 'domcontentloaded' });
+	check('ordinary browser navigation reached the exact wp-admin destination',
 		new URL(page.url()).pathname === '/wp-admin/', page.url());
 	const rediscovered = await stableTools(ADMIN_TOOL_NAMES.length);
 	check('destination page base tools rediscover after same-origin navigation',
