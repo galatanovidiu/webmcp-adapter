@@ -3,12 +3,16 @@
 	"landingPage": "/",
 	"preferredVersions": {
 		"php": "8.3",
-		"wp": "7.0"
+		"wp": "7.0.4"
 	},
 	"steps": [
 		{
 			"step": "activatePlugin",
 			"pluginPath": "webmcp-adapter/webmcp-adapter.php"
+		},
+		{
+			"step": "activatePlugin",
+			"pluginPath": "webmcp-provider/webmcp-provider.php"
 		},
 		{
 			"step": "setSiteOptions",
