@@ -93,9 +93,11 @@ whose schema requires no arguments.
 
 ## Expected inventory
 
-- Default: 7 `webmcp-*` read tools.
-- Writes enabled: 15 frontend tools.
-- Writes plus destructive enabled: 16 frontend tools, including `save-post`.
+- Generic wp-admin: 2 base read tools.
+- Default block editor: 9 tools (2 admin base tools plus 7 editor reads).
+- Block editor with writes enabled: 17 tools.
+- Block editor with writes plus destructive enabled: 18 tools, including `save-post`.
+- Anonymous frontend: 2 base reads; authenticated frontend: 3 base reads.
 - No `core-*`, `og-*`, or other `serverRegistered` ability may appear.
 
 The store can populate later, so poll until the frontend inventory stabilizes. A

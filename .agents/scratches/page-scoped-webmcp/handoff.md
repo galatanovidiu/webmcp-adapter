@@ -10,8 +10,9 @@ Last updated: 3 September 2026.
 - Implementation plan approved as the next artifact:
   [`implementation-plan.md`](implementation-plan.md).
 - Batch 0 merged through pull request #9.
-- Batch 1 is complete on `feat/page-scoped-bridge`; page-loading changes have not
-  started.
+- Batch 1 merged through pull request #10.
+- Batch 2 is complete on `feat/page-scoped-base-providers`; destination extraction
+  has not started.
 - The user authorized uninterrupted implementation, verification, pull requests,
   and merges through the remaining approved batches.
 
@@ -49,8 +50,8 @@ normal browser opens them.
 
 ## Next action
 
-Deliver and merge Batch 1, then start Batch 2 from updated trunk. Batch 2 owns
-eligible-page loading and base providers; destination extraction remains Batch 3.
+Deliver and merge Batch 2, then start Batch 3 from updated trunk. Batch 3 owns
+rendered destination extraction and removal of the navigation-execution Ability.
 
 ## Session update: Batch 0
 
@@ -200,6 +201,70 @@ and base page-context providers on eligible public and admin documents.
 Commit/push status: three atomic Batch 1 commits are on
 `feat/page-scoped-bridge`, including this handoff update. Push and pull-request
 delivery follow immediately; no release was created.
+
+## Session update: Batch 2
+
+Date: 3 September 2026.
+
+Batch and scope: eligible frontend/wp-admin loading plus base page providers. No
+destination extraction, editor gate removal, form staging, or activity redesign.
+
+Completed:
+
+- Enqueue the bridge on normal frontend pages and wp-admin, while leaving login and
+  other authentication screens asset-free.
+- Explicitly enqueue the classic `wp-data` and `wp-i18n` dependencies required by
+  WordPress 7.0's public `@wordpress/abilities` module.
+- Added `PageContext` and `webmcp/get-page-context` with the minimal surface, URL,
+  page/screen, object, taxonomy, post type, and authentication fields. Sensitive
+  authentication query parameters are removed from reported URLs.
+- Added page-selected `list-site-destinations` and `list-admin-destinations`
+  provider shells. Their callbacks intentionally return empty lists until Batch 3.
+- Load the legacy editor provider only when `WP_Screen::is_block_editor()` is true,
+  eliminating editor tools from Dashboard and unrelated admin pages without
+  changing editor callbacks or exposure settings.
+- Changed the disposable Playground blueprint to require a real login so anonymous
+  and authenticated frontend inventories can be tested independently.
+
+Files changed:
+
+- `includes/Plugin.php`, `includes/PageContext.php`, and `webmcp-adapter.php`
+- `src/abilities/category.js`, `src/abilities/index.js`, and the three base provider
+  modules
+- Playground blueprint/script/skill, Playwright driver skill and editor verifier,
+  WebMCP agent skill, and `tools/verify-page-scoping.mjs`
+- `.agents/scratches/page-scoped-webmcp/handoff.md`
+
+Verification performed:
+
+- `npm test`: 18 passed, 0 failed.
+- `node tools/verify-page-scoping.mjs --expect=batch2`: all seven rows passed on
+  disposable WordPress 7.0: Dashboard 2, General Settings 2, post editor 9, Site
+  Editor 9, authenticated frontend 3, anonymous frontend 2, authentication screen
+  0.
+- `.agents/skills/webmcp-playwright/verify-frontend.mjs`: 87 passed, 0 failed,
+  preserving every editor operation and the legacy write/destructive gates while
+  proving generic-admin scoping and destination-page rediscovery.
+- Authenticated and anonymous driver calls to `webmcp.get-page-context` returned the
+  same minimal frontend shape with `authenticated: true` and `false` respectively.
+- The agreed final matrix now passes Dashboard, authenticated frontend, anonymous
+  frontend, and authentication screens. General Settings and both editor rows remain
+  red for their later provider work.
+- PHP/JavaScript/shell/JSON syntax, skill instruction validators, and
+  `git diff --check` passed.
+
+Open risks or failures:
+
+- Destination provider shells return empty lists by design until Batch 3.
+- Editor inventories still include `webmcp.navigate` and still depend on the two
+  exposure settings; Batches 3 and 4 own those changes.
+
+Exact next action: push and merge Batch 2, then implement rendered public/admin
+destination discovery and remove `webmcp/navigate` in Batch 3.
+
+Commit/push status: three atomic Batch 2 commits are on
+`feat/page-scoped-base-providers`, including this handoff update. Push and
+pull-request delivery follow immediately; no release was created.
 
 ## Session update template
 

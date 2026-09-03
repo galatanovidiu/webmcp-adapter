@@ -8,6 +8,9 @@
  *
  * The agreed contract is intentionally red during Batch 0:
  *   node tools/verify-page-scoping.mjs --expect=agreed
+ *
+ * Batch 2's independently green transition state:
+ *   node tools/verify-page-scoping.mjs --expect=batch2
  */
 
 import fs from 'node:fs';
@@ -111,6 +114,20 @@ const AGREED_INVENTORIES = {
 		'webmcp.list-admin-destinations',
 	].sort(),
 	'anonymous-frontend': [ ...FRONTEND_BASE_NAMES ].sort(),
+	'authentication-screen': [],
+};
+
+const BATCH_2_INVENTORIES = {
+	dashboard: [ ...ADMIN_BASE_NAMES ].sort(),
+	'general-settings': [ ...ADMIN_BASE_NAMES ].sort(),
+	'post-editor': [ ...ADMIN_BASE_NAMES, ...CURRENT_READ_NAMES ].sort(),
+	'site-editor': [ ...ADMIN_BASE_NAMES, ...CURRENT_READ_NAMES ].sort(),
+	'authenticated-frontend': [
+		...FRONTEND_BASE_NAMES,
+		'webmcp.list-admin-destinations',
+	].sort(),
+	'anonymous-frontend': [ ...FRONTEND_BASE_NAMES ].sort(),
+	'authentication-screen': [],
 };
 
 function readExpectedMode() {
@@ -118,9 +135,9 @@ function readExpectedMode() {
 		argument.startsWith( '--expect=' )
 	);
 	const mode = option?.slice( '--expect='.length ) || 'agreed';
-	if ( ! [ 'current', 'agreed' ].includes( mode ) ) {
+	if ( ! [ 'current', 'batch2', 'agreed' ].includes( mode ) ) {
 		console.error(
-			'Usage: verify-page-scoping.mjs --expect=current|agreed'
+			'Usage: verify-page-scoping.mjs --expect=current|batch2|agreed'
 		);
 		process.exit( 1 );
 	}
@@ -267,6 +284,7 @@ function verifyCurrentBaseline( inventories ) {
 	for ( const context of [
 		'authenticated-frontend',
 		'anonymous-frontend',
+		'authentication-screen',
 	] ) {
 		passed =
 			checkExact(
@@ -279,10 +297,10 @@ function verifyCurrentBaseline( inventories ) {
 	return passed;
 }
 
-function verifyAgreedContract( inventories ) {
+function verifyExactContract( inventories, expectedInventories ) {
 	let passed = true;
 	for ( const [ context, expected ] of Object.entries(
-		AGREED_INVENTORIES
+		expectedInventories
 	) ) {
 		passed =
 			checkExact( context, inventories[ context ], expected ) && passed;
@@ -320,12 +338,21 @@ try {
 
 	await browserContext.clearCookies();
 	inventories[ 'anonymous-frontend' ] = await openAndInventory( page, '/' );
+	inventories[ 'authentication-screen' ] = await openAndInventory(
+		page,
+		'/wp-login.php'
+	);
 
 	console.log( `\n== Page inventory: ${ expectedMode } contract ==` );
 	passed =
 		expectedMode === 'current'
 			? verifyCurrentBaseline( inventories )
-			: verifyAgreedContract( inventories );
+			: verifyExactContract(
+					inventories,
+					expectedMode === 'batch2'
+						? BATCH_2_INVENTORIES
+						: AGREED_INVENTORIES
+			  );
 } finally {
 	await browserContext.close();
 	fs.rmSync( PROFILE_DIR, { recursive: true, force: true } );

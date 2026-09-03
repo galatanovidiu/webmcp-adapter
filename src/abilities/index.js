@@ -10,8 +10,8 @@
  */
 
 // Category first: registerAbility rejects an ability whose category is not yet
-// registered, and static imports evaluate in source order.
-import './category.js';
+// registered. The registered module id also keeps the plugin version cache key.
+import 'webmcp-adapter/category';
 import './navigate.js';
 import './editor-context.js';
 // Generic block-CRUD substrate + discovery + patterns: a small set of tools that

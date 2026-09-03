@@ -18,7 +18,11 @@ const WP_USER = process.env.WP_USER || 'admin';
 const WP_PASS = process.env.WP_PASS || 'password';
 const PROFILE_DIR = path.join(os.tmpdir(), `webmcp-verify-${Date.now()}`);
 const FLAGS = ['--enable-features=WebMCP,WebMCPTesting,DevToolsWebMCPSupport'];
-const READ_TOOL_NAMES = [
+const ADMIN_TOOL_NAMES = [
+	'webmcp.get-page-context',
+	'webmcp.list-admin-destinations',
+].sort();
+const EDITOR_READ_TOOL_NAMES = [
 	'webmcp.editor-context',
 	'webmcp.get-theme-design-tokens',
 	'webmcp.list-block-types',
@@ -27,6 +31,7 @@ const READ_TOOL_NAMES = [
 	'webmcp.navigate',
 	'webmcp.read-blocks',
 ].sort();
+const READ_TOOL_NAMES = [...ADMIN_TOOL_NAMES, ...EDITOR_READ_TOOL_NAMES].sort();
 const WRITE_TOOL_NAMES = [
 	...READ_TOOL_NAMES,
 	'webmcp.edit-post-attributes',
@@ -82,9 +87,21 @@ async function detectStandardInputMode() {
 	))) return;
 
 	standardInputMode = await page.evaluate(async () => {
-		const probe = (await document.modelContext.getTools())
-			.find((tool) => tool.window === window && tool.name === 'webmcp.editor-context');
-		if (!probe) throw new Error('The frontend read probe webmcp.editor-context is unavailable.');
+		const tools = (await document.modelContext.getTools())
+			.filter((tool) => tool.window === window);
+		const noInputRead = (tool) => {
+			let inputSchema = tool.inputSchema;
+			if (typeof inputSchema === 'string') {
+				try { inputSchema = JSON.parse(inputSchema); } catch { return false; }
+			}
+			return tool.annotations?.readOnlyHint === true &&
+				(!Array.isArray(inputSchema?.required) || inputSchema.required.length === 0);
+		};
+		const probe = tools.find((tool) =>
+			['webmcp.get-page-context', 'webmcp.editor-context'].includes(tool.name) &&
+			noInputRead(tool)
+		) || tools.find(noInputRead);
+		if (!probe) throw new Error('No read-only, no-input WebMCP probe is available.');
 		try {
 			await document.modelContext.executeTool(probe, {});
 			return 'object';
@@ -179,18 +196,19 @@ try {
 		page.click('#submit', { force: true }),
 	]);
 
-	const defaultTools = await stableTools(READ_TOOL_NAMES.length);
+	const defaultTools = await stableTools(ADMIN_TOOL_NAMES.length);
 	const defaultNames = defaultTools.map((tool) => tool.name).sort();
-	check('default inventory is the exact 7-tool frontend read set',
-		JSON.stringify(defaultNames) === JSON.stringify(READ_TOOL_NAMES),
+	check('generic admin inventory is the exact 2-tool base set',
+		JSON.stringify(defaultNames) === JSON.stringify(ADMIN_TOOL_NAMES),
 		defaultTools.map((tool) => tool.name).join(', '));
 	await detectStandardInputMode();
 
-	const dashboardContextRaw = await executeTool('webmcp.editor-context');
+	const dashboardContextRaw = await executeTool('webmcp.get-page-context');
 	const dashboardContext = typeof dashboardContextRaw === 'string'
 		? JSON.parse(dashboardContextRaw) : dashboardContextRaw;
-	check('editor-context is structured and reports no editor',
-		dashboardContext.inEditor === false, JSON.stringify(dashboardContext));
+	check('page-context is structured and reports wp-admin',
+		dashboardContext.surface === 'wp-admin' && dashboardContext.authenticated === true,
+		JSON.stringify(dashboardContext));
 
 	// Enable unsaved writes first and verify the intermediate gate.
 	await page.check('#webmcp_enable_write_tools', { force: true });
@@ -198,15 +216,21 @@ try {
 		page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
 		page.click('#submit', { force: true }),
 	]);
+	await page.goto(`${WP_URL}/wp-admin/post-new.php?post_type=page`, {
+		waitUntil: 'domcontentloaded',
+	});
 	const writeTools = await stableTools(WRITE_TOOL_NAMES.length);
 	const writeNames = writeTools.map((tool) => tool.name).sort();
-	check('write inventory is the exact 15-tool frontend set',
+	check('write-enabled editor inventory is the exact 17-tool set',
 		JSON.stringify(writeNames) === JSON.stringify(WRITE_TOOL_NAMES),
 		writeTools.map((tool) => tool.name).join(', '));
 	check('save-post remains hidden without destructive gate',
 		!writeTools.some((tool) => tool.name === 'webmcp.save-post'));
 
 	// Enable the complete frontend set for the editor exercise.
+	await page.goto(`${WP_URL}/wp-admin/options-general.php?page=webmcp-adapter`, {
+		waitUntil: 'domcontentloaded',
+	});
 	await page.check('#webmcp_enable_destructive_tools', { force: true });
 	await Promise.all([
 		page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
@@ -224,7 +248,7 @@ try {
 	// ---- Wait for tools ----
 	const tools = await stableTools(COMPLETE_TOOL_NAMES.length);
 	const names = tools.map((t) => t.name);
-	check('complete inventory is the exact 16-tool frontend set',
+	check('complete editor inventory is the exact 18-tool set',
 		JSON.stringify([...names].sort()) === JSON.stringify(COMPLETE_TOOL_NAMES),
 		names.join(', '));
 	check('no server ability request was made', abilityRequests.length === 0,
@@ -345,7 +369,7 @@ try {
 	await page.waitForTimeout(500);
 	const afterServerProbe = await listTools();
 	check('server and mixed-provenance abilities remain excluded',
-		afterServerProbe.length === 16 &&
+		afterServerProbe.length === COMPLETE_TOOL_NAMES.length &&
 		!afterServerProbe.some((tool) => [
 			'webmcp-probe.server-only',
 			'webmcp-probe.mixed-provenance',
@@ -373,7 +397,7 @@ try {
 	const afterLateProbe = await listTools();
 	check('late client ability registers exactly once',
 		afterLateProbe.filter((tool) => tool.name === 'webmcp-probe.late-client').length === 1 &&
-		afterLateProbe.length === 17,
+		afterLateProbe.length === COMPLETE_TOOL_NAMES.length + 1,
 		afterLateProbe.map((tool) => tool.name).join(', '));
 
 	const collisionProbe = await page.evaluate(async () => {
@@ -405,7 +429,7 @@ try {
 	check('slash-to-dot projection keeps formerly colliding names distinct',
 		['webmcp-probe.collision', 'webmcp.probe-collision'].every((name) =>
 			afterCollisionProbe.some((tool) => tool.name === name)) &&
-		afterCollisionProbe.length === 19,
+		afterCollisionProbe.length === COMPLETE_TOOL_NAMES.length + 3,
 		afterCollisionProbe.map((tool) => tool.name).join(', '));
 	check('injective projected names produce no registration warning',
 		!adapterWarnings.some((warning) => warning.includes('probe-collision')),
@@ -744,16 +768,17 @@ try {
 		JSON.stringify(navigationOutcome));
 	check('navigate reached the exact wp-admin destination',
 		new URL(page.url()).pathname === '/wp-admin/', page.url());
-	const rediscovered = await stableTools(COMPLETE_TOOL_NAMES.length);
-	check('tools rediscover after same-origin navigation',
+	const rediscovered = await stableTools(ADMIN_TOOL_NAMES.length);
+	check('destination page base tools rediscover after same-origin navigation',
 		JSON.stringify(rediscovered.map((tool) => tool.name).sort()) ===
-			JSON.stringify(COMPLETE_TOOL_NAMES));
-	const dashboardAfterNavigation = await executeTool('webmcp.editor-context');
+			JSON.stringify(ADMIN_TOOL_NAMES));
+	const dashboardAfterNavigation = await executeTool('webmcp.get-page-context');
 	const dashboardAfter = typeof dashboardAfterNavigation === 'string'
 		? JSON.parse(dashboardAfterNavigation)
 		: dashboardAfterNavigation;
-	check('rediscovered editor-context executes on destination page',
-		dashboardAfter.inEditor === false, JSON.stringify(dashboardAfter));
+	check('rediscovered page-context executes on destination page',
+		dashboardAfter.surface === 'wp-admin' && dashboardAfter.pageType === 'dashboard',
+		JSON.stringify(dashboardAfter));
 
 } finally {
 	if (!page.isClosed()) {
