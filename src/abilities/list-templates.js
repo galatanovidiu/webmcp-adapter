@@ -44,11 +44,21 @@ registerAbility( {
 		properties: {},
 		additionalProperties: false,
 	},
-	meta: { annotations: { readonly: true, clientRegistered: true } },
+	meta: {
+		annotations: {
+			readonly: true,
+			destructive: false,
+			idempotent: true,
+			clientRegistered: true,
+		},
+	},
 	callback: async () => {
 		const data = window.wp?.data;
 		if ( ! data?.resolveSelect ) {
-			return { templates: [], reason: 'The editor data layer is not loaded.' };
+			return {
+				templates: [],
+				reason: 'The editor data layer is not loaded.',
+			};
 		}
 
 		let templates, parts;

@@ -41,8 +41,8 @@ From the repository root:
 ```
 
 That boots Playground (first run downloads WP, ~1 min), opens the existing post editor,
-lists the registered tools, and executes one read tool. Expected: 8 tools (two admin
-base tools plus six editor reads) and an `editor-context` result.
+lists the registered tools, and executes one read tool. Expected: 17 tools (two
+admin base tools plus all 15 editor tools) and an `editor-context` result.
 The server stays up afterward so you can keep poking.
 
 ## Commands
@@ -64,15 +64,11 @@ Example:
 
 ## Options (env)
 
-- `ENABLE_WRITES=1` — also expose the non-destructive **write** tools (8 → 16). The
-  script injects a `setSiteOptions` step that turns on `webmcp_enable_write_tools`. Default
-  is reads-only, matching the plugin's secure default.
 - `PORT` (9400), `WP` (7.0), `PHP` (8.3), `PW_VERSION` (latest `@wp-playground/cli`).
 - `HEADLESS=0` — run the driver's Chrome headed (visible) instead of headless.
 
-To expose `save-post`, also enable **destructive tools** on the settings screen in the
-browser (`/wp-admin/options-general.php?page=webmcp-adapter`, admin / password). Each call
-needs an in-page confirmation.
+All 15 editor tools are exposed on compatible block-editor screens. Each `save-post`
+call still needs the trusted-click in-page confirmation.
 
 ## What this skill does NOT do
 
@@ -84,10 +80,12 @@ Playwright scripts or testing the gate end to end, use that skill directly again
 
 ## The blueprint is reusable on its own
 
-[blueprint.json](blueprint.json) activates the adapter and lands on the settings screen.
+[blueprint.json](blueprint.json) activates the adapter and lands on the frontend.
 It is a standard Playground blueprint — you can also paste it into the live editor at
 `playground.wordpress.net` (it would need the plugins fetched from a URL rather than mounted
 from disk, but the steps are the shareable part).
+It also seeds the three retired exposure/confirmation options with restrictive or
+unsafe legacy values so the live suite proves the runtime ignores them.
 
 ## Teardown
 
@@ -103,6 +101,5 @@ Playground is fully ephemeral — its SQLite database lives only in a temp dir a
 - First boot downloads `wordpress-7.0.zip`; later boots are cached and fast.
 - The script records and validates the process it starts. It refuses to reuse or
   stop an unknown process that already owns the configured port.
-- The tool count depends on the gates: reads always show; writes require
-  `ENABLE_WRITES=1` (or the UI toggle); `save-post` also requires the destructive
-  setting.
+- Compatible block-editor screens expose the complete 17-tool inventory;
+  `save-post` still requires its in-page confirmation.

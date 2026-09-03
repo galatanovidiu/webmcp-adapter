@@ -6,15 +6,14 @@
  * `status` arg, implements the real publish flow (core's own publish button is
  * exactly editPost({status}, {undoIgnore:true}) + savePost()).
  *
- * destructive:true — BY DESIGN, even for a plain draft save: saving an
- * already-published post updates the live public page. The annotation routes the
- * call through the write + destructive settings AND the isTrusted confirmation
- * modal, where the human sees the ARGS — including status:"publish" — before
- * approving. That is also why status lives HERE and is rejected by write-tier
- * edit-post-attributes: the modal shows a call's args, not accumulated prior
- * edits, so a pre-staged status flip would turn an innocent-looking "save" into a
- * silent publish. On a failed save the staged status is reverted for the same
- * reason.
+ * Risk `consequential` and destructive:true — by design, even for a plain draft
+ * save: saving an already-published post updates the live public page. Every call
+ * requires the trusted-click confirmation modal, where the human sees the arguments
+ * — including status:"publish" — before approving. That is also why status lives
+ * here and is rejected by edit-post-attributes: the modal shows a call's args, not
+ * accumulated prior edits, so a pre-staged status flip would turn an
+ * innocent-looking "save" into a silent publish. On a failed save the staged
+ * status is reverted for the same reason.
  *
  * savePost() returns undefined SILENTLY when the post is not saveable — the
  * callback pre-checks and reports, never fakes success.
@@ -47,6 +46,7 @@ registerAbility( {
 		annotations: {
 			readonly: false,
 			destructive: true,
+			idempotent: true,
 			clientRegistered: true,
 		},
 		webmcp: { risk: 'consequential' },

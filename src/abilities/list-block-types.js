@@ -70,11 +70,21 @@ registerAbility( {
 		},
 		additionalProperties: false,
 	},
-	meta: { annotations: { readonly: true, clientRegistered: true } },
+	meta: {
+		annotations: {
+			readonly: true,
+			destructive: false,
+			idempotent: true,
+			clientRegistered: true,
+		},
+	},
 	callback: async ( { name, names, category, full } = {} ) => {
 		const blocks = window.wp?.blocks;
 		if ( ! blocks?.getBlockTypes ) {
-			return { available: false, reason: 'The block editor is not loaded.' };
+			return {
+				available: false,
+				reason: 'The block editor is not loaded.',
+			};
 		}
 
 		const shape = ( block ) => ( {

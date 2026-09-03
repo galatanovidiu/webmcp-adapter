@@ -11,8 +11,9 @@ in your own words before opening the site:
    browser, both can discover these actions as Site tools and call them directly.
    The repository's system-Chrome drivers are deterministic development fallbacks,
    not substitutes for the native acceptance path.
-3. **What this plugin exposes.** It exposes only frontend WordPress editor abilities:
-   seven reads by default, eight gated unsaved-write tools, and one separately gated
-   save/publish tool. It does not expose REST-backed or server MCP abilities.
+3. **What this plugin exposes.** It exposes page-scoped frontend WordPress abilities:
+   public/admin orientation and destination reads, plus six reads, eight reversible
+   unsaved writes, and one confirmed save/publish tool on block-editor screens. It
+   does not expose REST-backed or server MCP abilities.
 
 Then proceed with the workflow in the parent skill.

@@ -48,7 +48,14 @@ registerAbility( {
 		},
 		additionalProperties: false,
 	},
-	meta: { annotations: { readonly: true, clientRegistered: true } },
+	meta: {
+		annotations: {
+			readonly: true,
+			destructive: false,
+			idempotent: true,
+			clientRegistered: true,
+		},
+	},
 	callback: async ( { category, includeContextBound } = {} ) => {
 		const data = window.wp?.data;
 		if ( ! data?.resolveSelect ) {

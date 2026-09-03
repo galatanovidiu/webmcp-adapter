@@ -8,7 +8,6 @@
  * @param {Object}      ability              Ability record (for its label/name).
  * @param {Object}      params               Arguments the tool would run with.
  * @param {AbortSignal} signal               Optional invocation signal.
- * @param {boolean}     automatedConfirmation Whether synthetic confirmation is allowed.
  * @param {number}      timeoutMs            Maximum wait before a safe decline.
  * @return {Promise<{approved: boolean, reason: string}>} The confirmation decision.
  */
@@ -16,7 +15,6 @@ export function confirmDestructive(
 	ability,
 	params,
 	signal,
-	automatedConfirmation = false,
 	timeoutMs = 60000
 ) {
 	throwIfAborted( signal );
@@ -57,20 +55,6 @@ export function confirmDestructive(
 		const tool = document.createElement( 'p' );
 		tool.style.cssText = 'margin:0 0 10px;font-weight:600;';
 		tool.textContent = toolLabel;
-
-		let automationMarker = null;
-		if ( automatedConfirmation ) {
-			automationMarker = document.createElement( 'p' );
-			automationMarker.setAttribute(
-				'data-webmcp-confirm-automation',
-				''
-			);
-			automationMarker.textContent =
-				'⚙ Automated confirmation enabled — a script may confirm this without a human.';
-			automationMarker.style.cssText =
-				'margin:0 0 10px;padding:6px 8px;border-radius:4px;' +
-				'background:#fcf0c8;color:#664d03;font-size:12px;';
-		}
 
 		const argsLabel = document.createElement( 'p' );
 		argsLabel.style.cssText =
@@ -142,7 +126,7 @@ export function confirmDestructive(
 			finish( false, 'declined' )
 		);
 		confirmBtn.addEventListener( 'click', ( event ) => {
-			if ( ! automatedConfirmation && ! event.isTrusted ) {
+			if ( ! event.isTrusted ) {
 				return;
 			}
 			finish( true, 'confirmed' );
@@ -160,9 +144,6 @@ export function confirmDestructive(
 
 		buttons.append( cancelBtn, confirmBtn );
 		dialog.append( title, intro, tool, argsLabel, args, buttons );
-		if ( automationMarker ) {
-			dialog.insertBefore( automationMarker, argsLabel );
-		}
 		overlay.append( dialog );
 		( document.body ?? document.documentElement ).append( overlay );
 

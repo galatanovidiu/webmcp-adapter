@@ -143,14 +143,21 @@ const BATCH_3_INVENTORIES = {
 	'site-editor': [ ...ADMIN_BASE_NAMES, ...CURRENT_READ_NAMES ].sort(),
 };
 
+const BATCH_4_INVENTORIES = {
+	...AGREED_INVENTORIES,
+	'general-settings': [ ...ADMIN_BASE_NAMES ].sort(),
+};
+
 function readExpectedMode() {
 	const option = process.argv.find( ( argument ) =>
 		argument.startsWith( '--expect=' )
 	);
 	const mode = option?.slice( '--expect='.length ) || 'agreed';
-	if ( ! [ 'current', 'batch2', 'batch3', 'agreed' ].includes( mode ) ) {
+	if (
+		! [ 'current', 'batch2', 'batch3', 'batch4', 'agreed' ].includes( mode )
+	) {
 		console.error(
-			'Usage: verify-page-scoping.mjs --expect=current|batch2|batch3|agreed'
+			'Usage: verify-page-scoping.mjs --expect=current|batch2|batch3|batch4|agreed'
 		);
 		process.exit( 1 );
 	}
@@ -366,6 +373,8 @@ try {
 						? BATCH_2_INVENTORIES
 						: expectedMode === 'batch3'
 						? BATCH_3_INVENTORIES
+						: expectedMode === 'batch4'
+						? BATCH_4_INVENTORIES
 						: AGREED_INVENTORIES
 			  );
 } finally {

@@ -26,29 +26,6 @@ import { confirmDestructive, throwIfAborted } from './confirmation.js';
 // replaces it in Chrome 150. Prefer document, fall back to navigator.
 const modelContext = document.modelContext || navigator.modelContext;
 
-// Option-B write gate: write abilities become WebMCP tools only when the admin
-// enabled the write setting. The flag is read ONCE here from server-provided
-// script-module data; any missing/unparseable/non-true value is treated as
-// disabled, so the gate fails safe (writes hidden). A setting change takes effect
-// on the next page load.
-const WRITE_TOOLS_ENABLED = readModuleFlag( 'writeToolsEnabled' );
-
-// The destructive save/publish ability is exposed only when this SECOND toggle
-// is on AND writes are enabled. Read once here; any missing/unparseable/non-true
-// value reads as disabled (fail-safe).
-const DESTRUCTIVE_TOOLS_ENABLED = readModuleFlag( 'destructiveToolsEnabled' );
-
-// Default-OFF demo escape hatch. When the admin turns this on, the in-page
-// confirmation modal accepts synthetic (script-dispatched) clicks so a script or
-// agent can drive destructive tools end-to-end for a recording. When off
-// (the default), the modal rejects page-script synthetic clicks
-// (`event.isTrusted === false`). This is a page-script boundary, not proof that a
-// privileged browser automation client is human. Read once here; any
-// missing/unparseable/non-true value reads as off (fail-safe).
-const AUTOMATED_CONFIRMATION_ALLOWED = readModuleFlag(
-	'allowAutomatedConfirmation'
-);
-
 // Writes-only map of ability NAME to an admin-relative URL template with {param}
 // tokens (e.g. `post.php?post={id}&action=edit`). The server supplies it via the
 // `webmcp_screen_links` filter; reads and some writes are absent (linkless). Read
@@ -92,13 +69,6 @@ const RUN_ID = ( () => {
 	}
 } )();
 
-// Appended to a destructive tool's description so the agent is TOLD the live
-// confirmation mode. Honest disclosure only — a non-compliant agent can ignore it,
-// which is a known, accepted risk for this proof of concept (tracked as follow-up).
-const CONFIRMATION_MODE_NOTICE = AUTOMATED_CONFIRMATION_ALLOWED
-	? 'Automated confirmation is currently ENABLED: page-script confirmation is accepted. '
-	: 'The page requires a trusted confirmation click before this runs; page script cannot synthesize it. ';
-
 // Prefixed to a destructive tool's description. WebMCP has no agent-consumed
 // "destructive" hint, so the description tells the agent what to expect: running
 // the tool pops an in-page confirmation the supervising user can approve first.
@@ -114,42 +84,12 @@ if ( modelContext && typeof modelContext.registerTool === 'function' ) {
 		reportDiagnostic: reportBridgeDiagnostic,
 		classifyAbilityRisk,
 		toWebMcpToolName,
-		shouldRegisterAbility: ( ability ) =>
-			shouldExpose( ability.meta?.annotations ?? {} ),
 	} );
 	void synchronizer.start();
 	// Hydrate the panel with this run's prior activity ONCE here, at adapter init —
 	// not on the store subscribe tick — so server history and live entries never
 	// double-render.
 	hydrateActivityLog();
-}
-
-/**
- * Reads a named boolean toggle from server-provided script-module data.
- *
- * The PHP side prints the adapter's boolean flags (e.g. `writeToolsEnabled`,
- * `destructiveToolsEnabled`, `allowAutomatedConfirmation`)
- * into a JSON script tag with id `wp-script-module-data-webmcp-adapter/adapter`.
- * Anything else — a missing tag, invalid JSON, or a non-true value — reads as
- * disabled (fail-safe).
- *
- * @param {string} key The flag name to read.
- * @return {boolean} True only when the named flag is explicitly true.
- */
-function readModuleFlag( key ) {
-	const container = document.getElementById(
-		'wp-script-module-data-webmcp-adapter/adapter'
-	);
-
-	if ( ! container ) {
-		return false;
-	}
-
-	try {
-		return JSON.parse( container.textContent )?.[ key ] === true;
-	} catch {
-		return false;
-	}
 }
 
 /**
@@ -229,32 +169,6 @@ function resolveScreenLink( abilityName, params = {} ) {
 }
 
 /**
- * Decides whether an ability may be exposed as a WebMCP tool (Option B).
- *
- * Read-only abilities are always exposed. With writes off, no write is exposed. A
- * destructive write is exposed when both the write and destructive settings are
- * on. Any other write is exposed when writes are on.
- *
- * @param {Object} annotations The ability's `meta.annotations` object.
- * @return {boolean} True if the ability should register as a tool.
- */
-function shouldExpose( annotations ) {
-	if ( annotations.readonly === true ) {
-		return true;
-	}
-
-	if ( ! WRITE_TOOLS_ENABLED ) {
-		return false;
-	}
-
-	if ( annotations.destructive === true ) {
-		return DESTRUCTIVE_TOOLS_ENABLED;
-	}
-
-	return true;
-}
-
-/**
  * Registers one ability as a WebMCP tool.
  *
  * @param {Object} ability              The ability record from the client store.
@@ -270,7 +184,7 @@ function registerAbilityAsTool( ability, { toolName, signal } ) {
 		ability.description ?? ability.label ?? ability.name;
 	const description =
 		annotations.destructive === true
-			? DESTRUCTIVE_NOTICE + CONFIRMATION_MODE_NOTICE + baseDescription
+			? DESTRUCTIVE_NOTICE + baseDescription
 			: baseDescription;
 
 	return modelContext.registerTool(
@@ -298,8 +212,7 @@ function registerAbilityAsTool( ability, { toolName, signal } ) {
 					const decision = await confirmDestructive(
 						ability,
 						params ?? {},
-						invocationSignal,
-						AUTOMATED_CONFIRMATION_ALLOWED
+						invocationSignal
 					);
 
 					if ( ! decision.approved ) {

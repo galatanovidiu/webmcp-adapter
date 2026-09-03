@@ -68,8 +68,6 @@ final class Plugin
 	 */
 	public function register(): void
 	{
-		(new Settings())->register();
-
 		// Create or upgrade the Site tools activity table on admin load. The migrator
 		// no-ops cheaply once the schema version matches, so running it on every
 		// admin request is safe (this is an admin-only plugin).
@@ -86,9 +84,8 @@ final class Plugin
 		add_action('admin_enqueue_scripts', [$this, 'enqueueAdmin']);
 		add_action('wp_enqueue_scripts', [$this, 'enqueueFrontend']);
 
-		// Ship the exposure toggles to the adapter as script-module data. The
-		// filter is registered unconditionally at load because core prints module
-		// data late (`print_script_module_data`), only for queued modules.
+		// Ship shared activity-link data to the adapter. The filter is registered
+		// unconditionally because core prints data late, only for queued modules.
 		add_filter('script_module_data_' . self::MODULE_HANDLE, [$this, 'addModuleData']);
 		add_filter(
 			'script_module_data_' . self::PAGE_CONTEXT_MODULE_HANDLE,
@@ -248,27 +245,19 @@ final class Plugin
 	}
 
 	/**
-	 * Adds the write and destructive toggles to the adapter's script-module data.
+	 * Adds activity-link data to the adapter's script-module data.
 	 *
 	 * Core serializes this array into a `<script type="application/json"
 	 * id="wp-script-module-data-webmcp-adapter/adapter">` tag the adapter reads on
-	 * load. The flags are ALWAYS emitted (never an empty array) so their absence is
-	 * unambiguous: a missing tag means the filter did not run, which the adapter
-	 * treats — like a false value — as writes disabled (fail-safe).
-	 * `allowAutomatedConfirmation` is the default-OFF demo flag that relaxes the
-	 * in-page synthetic-click guard. `screenLinks` is the writes-only map
-	 * of ability name to an admin-relative URL template; `adminUrl` is the wp-admin
-	 * base used to build an absolute link from such a template.
+	 * load. `screenLinks` is the writes-only map of Ability name to an
+	 * admin-relative URL template; `adminUrl` is the wp-admin base used to build an
+	 * absolute link from such a template.
 	 *
 	 * @param array<string,mixed> $data Existing module data.
-	 * @return array<string,mixed> Data including the exposure flags, screen-link map,
-	 *                             and wp-admin base URL.
+	 * @return array<string,mixed> Data including the screen-link map and wp-admin URL.
 	 */
 	public function addModuleData(array $data): array
 	{
-		$data['writeToolsEnabled']       = Settings::isEnabled();
-		$data['destructiveToolsEnabled'] = Settings::isDestructiveEnabled();
-		$data['allowAutomatedConfirmation'] = Settings::isAutomatedConfirmationAllowed();
 		// Writes-only map of ability name to an admin-relative URL template (with
 		// {param} tokens). Abilities register their own screen via this filter; the
 		// adapter resolves a write tool to its wp-admin URL at log time.

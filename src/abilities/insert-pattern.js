@@ -11,8 +11,7 @@
  * does not apply. Uses resolveSelect('core').getBlockPatterns() (the same resolver
  * list-patterns warms).
  *
- * Not readonly → gated behind webmcp_enable_write_tools. Not destructive (one
- * reversible unsaved insert). Does NOT save the post.
+ * Risk `reversible`: this is one undoable unsaved insert. It does not save the post.
  *
  * @package WebmcpAdapter
  */
@@ -58,7 +57,12 @@ registerAbility( {
 		additionalProperties: false,
 	},
 	meta: {
-		annotations: { readonly: false, clientRegistered: true },
+		annotations: {
+			readonly: false,
+			destructive: false,
+			idempotent: false,
+			clientRegistered: true,
+		},
 		webmcp: { risk: 'reversible' },
 	},
 	callback: async ( { name, rootClientId, index } = {} ) => {

@@ -156,7 +156,6 @@ const page = ctx.pages()[0] || (await ctx.newPage());
 const abilityRequests = [];
 const pageErrors = [];
 const adapterWarnings = [];
-let originalSettings = null;
 let createdPostId = null;
 page.on('request', (request) => {
 	if (request.url().includes('/wp-abilities/v1/abilities')) {
@@ -171,7 +170,7 @@ page.on('console', (message) => {
 });
 
 try {
-	// ---- Login + establish the default read-only inventory ----
+	// ---- Login + establish the generic admin inventory ----
 	await page.goto(`${WP_URL}/wp-admin/`, { waitUntil: 'domcontentloaded' });
 	if (page.url().includes('wp-login.php') || (await page.$('#user_login'))) {
 		await page.fill('#user_login', WP_USER);
@@ -181,20 +180,8 @@ try {
 			page.click('#wp-submit'),
 		]);
 	}
-	await page.goto(`${WP_URL}/wp-admin/options-general.php?page=webmcp-adapter`, {
-		waitUntil: 'domcontentloaded',
-	});
-	originalSettings = {
-		writes: await page.isChecked('#webmcp_enable_write_tools'),
-		destructive: await page.isChecked('#webmcp_enable_destructive_tools'),
-	};
-	await page.uncheck('#webmcp_enable_write_tools', { force: true });
-	await page.uncheck('#webmcp_enable_destructive_tools', { force: true });
-	await Promise.all([
-		page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
-		page.click('#submit', { force: true }),
-	]);
-
+	check('legacy WebMCP settings page is not registered',
+		await page.locator('a[href*="page=webmcp-adapter"]').count() === 0);
 	const defaultTools = await stableTools(ADMIN_TOOL_NAMES.length);
 	const defaultNames = defaultTools.map((tool) => tool.name).sort();
 	check('generic admin inventory is the exact 2-tool base set',
@@ -209,32 +196,6 @@ try {
 		dashboardContext.surface === 'wp-admin' && dashboardContext.authenticated === true,
 		JSON.stringify(dashboardContext));
 
-	// Enable unsaved writes first and verify the intermediate gate.
-	await page.check('#webmcp_enable_write_tools', { force: true });
-	await Promise.all([
-		page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
-		page.click('#submit', { force: true }),
-	]);
-	await page.goto(`${WP_URL}/wp-admin/post-new.php?post_type=page`, {
-		waitUntil: 'domcontentloaded',
-	});
-	const writeTools = await stableTools(WRITE_TOOL_NAMES.length);
-	const writeNames = writeTools.map((tool) => tool.name).sort();
-	check('write-enabled editor inventory is the exact 16-tool set',
-		JSON.stringify(writeNames) === JSON.stringify(WRITE_TOOL_NAMES),
-		writeTools.map((tool) => tool.name).join(', '));
-	check('save-post remains hidden without destructive gate',
-		!writeTools.some((tool) => tool.name === 'webmcp.save-post'));
-
-	// Enable the complete frontend set for the editor exercise.
-	await page.goto(`${WP_URL}/wp-admin/options-general.php?page=webmcp-adapter`, {
-		waitUntil: 'domcontentloaded',
-	});
-	await page.check('#webmcp_enable_destructive_tools', { force: true });
-	await Promise.all([
-		page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
-		page.click('#submit', { force: true }),
-	]);
 	await page.goto(`${WP_URL}/wp-admin/post-new.php?post_type=page`, {
 		waitUntil: 'domcontentloaded',
 	});
@@ -247,9 +208,12 @@ try {
 	// ---- Wait for tools ----
 	const tools = await stableTools(COMPLETE_TOOL_NAMES.length);
 	const names = tools.map((t) => t.name);
-	check('complete editor inventory is the exact 17-tool set',
+	check('editor inventory is the exact always-exposed 17-tool set',
 		JSON.stringify([...names].sort()) === JSON.stringify(COMPLETE_TOOL_NAMES),
 		names.join(', '));
+	check('unsaved writes and save-post are all exposed',
+		WRITE_TOOL_NAMES.every((name) => names.includes(name)) &&
+		names.includes('webmcp.save-post'));
 	check('no server ability request was made', abilityRequests.length === 0,
 		abilityRequests.join(', '));
 
@@ -294,12 +258,6 @@ try {
 		await page.click('[data-webmcp-confirm-accept]', { force: true });
 		return finishDeferredTool();
 	};
-	const declineDestructive = async (name, args = {}) => {
-		await startDeferredTool(name, args);
-		await page.waitForSelector('[data-webmcp-confirm-cancel]', { timeout: 8000 });
-		await page.click('[data-webmcp-confirm-cancel]', { force: true });
-		return finishDeferredTool();
-	};
 	const truth = (fn, arg) => page.evaluate(fn, arg);
 	let editorReady = false;
 	for (let i = 0; i < 30; i++) {
@@ -327,6 +285,28 @@ try {
 	check('tools carry titles', tools.every((tool) => typeof tool.title === 'string' && tool.title.length > 0));
 	check('tools mark page content untrusted',
 		tools.every((tool) => tool.annotations?.untrustedContentHint === true));
+	const editorAbilityContracts = await page.evaluate(async () => {
+		const { getAbilities } = await import('@wordpress/abilities');
+		return getAbilities()
+			.filter((ability) => ability.name.startsWith('webmcp/') &&
+				!['webmcp/get-page-context', 'webmcp/list-admin-destinations'].includes(ability.name))
+			.map((ability) => ({
+				name: ability.name,
+				annotations: ability.meta?.annotations,
+				risk: ability.meta?.webmcp?.risk,
+			}));
+	});
+	check('all 15 editor Abilities declare the complete annotation triple',
+		editorAbilityContracts.length === 15 &&
+		editorAbilityContracts.every(({ annotations }) =>
+			['readonly', 'destructive', 'idempotent'].every((key) =>
+				typeof annotations?.[key] === 'boolean')),
+		JSON.stringify(editorAbilityContracts));
+	check('every editor mutation has valid risk metadata',
+		editorAbilityContracts.every(({ annotations, risk }) =>
+			annotations.readonly === true ||
+			['reversible', 'consequential'].includes(risk)),
+		JSON.stringify(editorAbilityContracts));
 
 	const serverProbe = await page.evaluate(async () => {
 		try {
@@ -643,7 +623,16 @@ try {
 		lt.templates[0]?.editUrl);
 
 	console.log('\n== T12: save-post cancellation and decline ==');
-	const declined = await declineDestructive('webmcp.save-post', {});
+	await startDeferredTool('webmcp.save-post', {});
+	await page.waitForSelector('[data-webmcp-confirm-accept]', { timeout: 8000 });
+	await page.evaluate(() =>
+		document.querySelector('[data-webmcp-confirm-accept]').click());
+	await page.waitForTimeout(100);
+	check('synthetic confirmation cannot approve save-post',
+		await page.locator('[data-webmcp-confirm-overlay]').count() === 1 &&
+		await page.locator('[data-webmcp-confirm-automation]').count() === 0);
+	await page.click('[data-webmcp-confirm-cancel]', { force: true });
+	const declined = await finishDeferredTool();
 	check('save decline is structured', declined.cancelled === true,
 		JSON.stringify(declined));
 	const afterDecline = await callTool('webmcp.editor-context');
@@ -659,7 +648,7 @@ try {
 
 		const controller = new AbortController();
 		let continued = false;
-		const invocation = confirmDestructive(ability, {}, controller.signal, false, 1000)
+		const invocation = confirmDestructive(ability, {}, controller.signal, 1000)
 			.then(() => { continued = true; });
 		controller.abort();
 		let abortOutcome;
@@ -670,7 +659,7 @@ try {
 			abortOutcome = { resolved: false, name: error.name };
 		}
 		const afterAbort = document.querySelectorAll('[data-webmcp-confirm-overlay]').length;
-		const timedOut = await confirmDestructive(ability, {}, undefined, false, 20);
+		const timedOut = await confirmDestructive(ability, {}, undefined, 20);
 		const afterTimeout = document.querySelectorAll('[data-webmcp-confirm-overlay]').length;
 		return { available: true, abortOutcome, continued, afterAbort, timedOut, afterTimeout };
 	});
@@ -780,25 +769,6 @@ try {
 				), createdPostId);
 			} catch (error) {
 				check('fallback test-page cleanup', false, error.message);
-			}
-		}
-		if (originalSettings) {
-			try {
-				await page.goto(`${WP_URL}/wp-admin/options-general.php?page=webmcp-adapter`, {
-					waitUntil: 'domcontentloaded',
-				});
-				await page.setChecked('#webmcp_enable_write_tools', originalSettings.writes, { force: true });
-				await page.setChecked('#webmcp_enable_destructive_tools', originalSettings.destructive, { force: true });
-				await Promise.all([
-					page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
-					page.click('#submit', { force: true }),
-				]);
-				const restored =
-					(await page.isChecked('#webmcp_enable_write_tools')) === originalSettings.writes &&
-					(await page.isChecked('#webmcp_enable_destructive_tools')) === originalSettings.destructive;
-				check('WebMCP settings restored after test', restored);
-			} catch (error) {
-				check('WebMCP settings restored after test', false, error.message);
 			}
 		}
 	}

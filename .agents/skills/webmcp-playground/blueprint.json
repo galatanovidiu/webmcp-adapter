@@ -1,6 +1,6 @@
 {
 	"$schema": "https://playground.wordpress.net/blueprint-schema.json",
-	"landingPage": "/wp-admin/options-general.php?page=webmcp-adapter",
+	"landingPage": "/",
 	"preferredVersions": {
 		"php": "8.3",
 		"wp": "7.0"
@@ -9,6 +9,14 @@
 		{
 			"step": "activatePlugin",
 			"pluginPath": "webmcp-adapter/webmcp-adapter.php"
+		},
+		{
+			"step": "setSiteOptions",
+			"options": {
+				"webmcp_enable_write_tools": false,
+				"webmcp_enable_destructive_tools": false,
+				"webmcp_allow_automated_confirmation": true
+			}
 		}
 	]
 }

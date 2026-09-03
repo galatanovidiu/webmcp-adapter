@@ -59,7 +59,14 @@ registerAbility( {
 		},
 		additionalProperties: false,
 	},
-	meta: { annotations: { readonly: true, clientRegistered: true } },
+	meta: {
+		annotations: {
+			readonly: true,
+			destructive: false,
+			idempotent: true,
+			clientRegistered: true,
+		},
+	},
 	callback: async ( {
 		rootClientId,
 		maxDepth,
@@ -120,7 +127,9 @@ registerAbility( {
 			innerBlocks:
 				maxDepth != null && depth >= maxDepth
 					? []
-					: block.innerBlocks.map( ( child ) => map( child, depth + 1 ) ),
+					: block.innerBlocks.map( ( child ) =>
+							map( child, depth + 1 )
+					  ),
 		} );
 
 		// Curried selector: getBlocks(rootClientId), not getBlocks(state, ...).
