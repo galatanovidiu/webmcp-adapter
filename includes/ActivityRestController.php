@@ -13,83 +13,46 @@ if (!defined('ABSPATH')) {
 }
 
 /**
- * Exposes the gated record/list REST endpoints for Site tools activity.
+ * Hardened ingestion and administrator review routes for Site tools activity.
  *
- * Registers two routes under `webmcp/v1/activity`:
- *  - POST records one tool call (audit-only): the server builds the row from the
- *    request plus trusted server state (current user, login session token, time),
- *    redacts the params through {@see ActivityRedactor}, inserts it via
- *    {@see ActivityRepository}, and prunes the table to its retention cap.
- *  - GET lists activity: either the recent rows for one run, or a per-run summary.
- *
- * Authorization is `manage_options` on both routes — the hard guard. Nonce is NOT
- * hand-rolled: cookie-authenticated REST plus the `X-WP-Nonce` that `wp.apiFetch`
- * sends is validated by core (`rest_cookie_check_errors`) before the handler runs.
- *
- * @since 0.8.0
+ * POST accepts one final event after a browser invocation settles. Logged-in
+ * requests require cookie authentication plus a REST nonce; anonymous requests
+ * require a short-lived page-issued token and pass a keyed, no-raw-IP rate limit.
+ * GET remains administrator-only.
  */
 final class ActivityRestController
 {
-	/**
-	 * REST namespace for the adapter's routes.
-	 *
-	 * @var string
-	 */
 	private const NAMESPACE = 'webmcp/v1';
 
-	/**
-	 * Route, relative to the namespace.
-	 *
-	 * @var string
-	 */
 	private const ROUTE = '/activity';
 
-	/**
-	 * Number of most-recent rows retained in the activity table.
-	 *
-	 * @var int
-	 */
-	private const RETENTION_CAP = 2000;
+	private const MAX_PAYLOAD_BYTES = 4096;
 
-	/**
-	 * Allowed `outcome` values for a recorded activity row.
-	 *
-	 * @var array<int,string>
-	 */
-	private const OUTCOMES = ['ran', 'failed', 'declined', 'expired'];
-
-	/**
-	 * Activity store the controller reads from and writes to.
-	 *
-	 * @var ActivityRepository
-	 */
 	private ActivityRepository $repository;
 
-	/**
-	 * @param ActivityRepository|null $repository Optional store. When null, a
-	 *                                            default {@see ActivityRepository}
-	 *                                            is created.
-	 */
-	public function __construct(?ActivityRepository $repository = null)
-	{
+	private ActivityToken $token;
+
+	private ActivityRateLimiter $rateLimiter;
+
+	private ActivityEventNormalizer $normalizer;
+
+	public function __construct(
+		?ActivityRepository $repository = null,
+		?ActivityToken $token = null,
+		?ActivityRateLimiter $rateLimiter = null,
+		?ActivityEventNormalizer $normalizer = null
+	) {
 		$this->repository = $repository ?? new ActivityRepository();
+		$this->token = $token ?? new ActivityToken();
+		$this->rateLimiter = $rateLimiter ?? new ActivityRateLimiter();
+		$this->normalizer = $normalizer ?? new ActivityEventNormalizer();
 	}
 
-	/**
-	 * Registers the `rest_api_init` hook.
-	 *
-	 * @return void
-	 */
 	public function register(): void
 	{
 		add_action('rest_api_init', [$this, 'registerRoutes']);
 	}
 
-	/**
-	 * Registers the record (POST) and list (GET) routes.
-	 *
-	 * @return void
-	 */
 	public function registerRoutes(): void
 	{
 		register_rest_route(
@@ -99,46 +62,12 @@ final class ActivityRestController
 				[
 					'methods'             => 'POST',
 					'callback'            => [$this, 'record'],
-					'permission_callback' => [$this, 'permissionCheck'],
-					'args'                => [
-						'run_id'     => [
-							'type'              => 'string',
-							'required'          => true,
-							'sanitize_callback' => 'sanitize_text_field',
-							'validate_callback' => static fn($value): bool => is_string($value) && '' !== trim($value),
-						],
-						'ability'    => [
-							'type'              => 'string',
-							'required'          => true,
-							'sanitize_callback' => 'sanitize_text_field',
-							'validate_callback' => static fn($value): bool => is_string($value) && '' !== trim($value),
-						],
-						'outcome'    => [
-							'type'              => 'string',
-							'required'          => true,
-							'sanitize_callback' => 'sanitize_text_field',
-							'validate_callback' => static fn($value): bool => in_array($value, self::OUTCOMES, true),
-						],
-						'screen_url' => [
-							'type'              => 'string',
-							'required'          => false,
-							'sanitize_callback' => 'esc_url_raw',
-						],
-						'params'     => [
-							'type'              => 'object',
-							'required'          => false,
-							'default'           => [],
-							// The redactor (ActivityRedactor::redact) is the sanitizer for this
-							// bag — it caps depth/size and redacts secrets before storage; here
-							// we only assert the shape so a non-object is rejected early.
-							'validate_callback' => static fn($value): bool => is_array($value),
-						],
-					],
+					'permission_callback' => [$this, 'recordPermissionCheck'],
 				],
 				[
 					'methods'             => 'GET',
 					'callback'            => [$this, 'list'],
-					'permission_callback' => [$this, 'permissionCheck'],
+					'permission_callback' => [$this, 'reviewPermissionCheck'],
 					'args'                => [
 						'run_id' => [
 							'type'              => 'string',
@@ -157,55 +86,81 @@ final class ActivityRestController
 		);
 	}
 
-	/**
-	 * Authorizes a request: only `manage_options` users may record or list.
-	 *
-	 * This is the hard guard. Core validates the cookie nonce separately
-	 * (`rest_cookie_check_errors`); we do not re-check it here.
-	 *
-	 * @return bool True when the current user may use the endpoint.
-	 */
-	public function permissionCheck(): bool
+	/** @return true|WP_Error Whether a POST has valid bounded ingestion credentials. */
+	public function recordPermissionCheck(WP_REST_Request $request)
+	{
+		$sizeError = $this->validatePayloadSize($request);
+		if ($sizeError instanceof WP_Error) {
+			return $sizeError;
+		}
+
+		$context = $this->authenticateContext($request);
+
+		return $context instanceof WP_Error ? $context : true;
+	}
+
+	public function reviewPermissionCheck(): bool
 	{
 		return current_user_can('manage_options');
 	}
 
 	/**
-	 * Records one tool call (audit-only).
+	 * Stores one normalized final event and fires the exporter contract.
 	 *
-	 * Builds the row server-side from trusted state — the current user, the login
-	 * session token, and the current time — taking only the action fields from the
-	 * request. Params are redacted before they are JSON-encoded and stored. After a
-	 * successful insert the table is pruned to its retention cap.
+	 * After a successful insert, `webmcp_activity_stored` receives the exact
+	 * normalized event array and database row id. Export can be suppressed through
+	 * `webmcp_activity_should_export`; exporters must treat the supplied event as
+	 * already allowlisted and must not recover request bodies or raw client data.
 	 *
-	 * On insert failure this returns a generic 500 `WP_Error`; the detail stays in
-	 * the server log and is never leaked to the caller.
-	 *
-	 * @param WP_REST_Request<array<string,mixed>> $request The record request.
-	 * @return WP_REST_Response|WP_Error The new row id with status 201, or a 500 error.
+	 * @return WP_REST_Response|WP_Error Storage result.
 	 */
 	public function record(WP_REST_Request $request)
 	{
-		$screenUrl = $request['screen_url'];
-		$params    = is_array($request['params']) ? $request['params'] : [];
+		$sizeError = $this->validatePayloadSize($request);
+		if ($sizeError instanceof WP_Error) {
+			return $sizeError;
+		}
 
-		$row = [
-			'run_id'        => (string) $request['run_id'],
-			'user_id'       => get_current_user_id(),
-			'session_token' => (string) wp_get_session_token(),
-			'created'       => current_time('mysql'),
-			'ability'       => (string) $request['ability'],
-			'outcome'       => (string) $request['outcome'],
-			'screen_url'    => ('' === (string) $screenUrl) ? null : (string) $screenUrl,
-			'params'        => wp_json_encode(ActivityRedactor::redact($params)),
-		];
+		$auth = $this->authenticateContext($request);
+		if ($auth instanceof WP_Error) {
+			return $auth;
+		}
 
-		$id = $this->repository->insert($row);
+		$payload = $request->get_json_params();
+		if (!is_array($payload) || array_is_list($payload)) {
+			return new WP_Error(
+				'webmcp_activity_invalid_payload',
+				__('The activity payload must be a JSON object.', 'webmcp-adapter'),
+				['status' => 400]
+			);
+		}
 
+		if ($auth['anonymous']) {
+			$runId = is_string($payload['run_id'] ?? null) ? $payload['run_id'] : '';
+			$address = isset($_SERVER['REMOTE_ADDR']) ? (string) $_SERVER['REMOTE_ADDR'] : '';
+			if (!$this->rateLimiter->consume((string) $auth['context']['jti'], $runId, $address)) {
+				return new WP_Error(
+					'webmcp_activity_rate_limited',
+					__('Too many anonymous activity events were submitted.', 'webmcp-adapter'),
+					['status' => 429]
+				);
+			}
+		}
+
+		$event = $this->normalizer->normalize(
+			$payload,
+			$auth['context'],
+			$auth['user_id'],
+			$auth['anonymous']
+		);
+		if ($event instanceof WP_Error) {
+			return $event;
+		}
+
+		$id = $this->repository->insert($event);
 		if (0 === $id) {
-			// Audit-only path: log the detail server-side (debug only), return a generic error.
 			if (defined('WP_DEBUG') && WP_DEBUG) {
-				error_log('WebMCP Adapter: failed to record Site tools activity row.');
+				error_log('WebMCP Adapter: failed to record a normalized Site tools activity event.');
 			}
 
 			return new WP_Error(
@@ -215,32 +170,44 @@ final class ActivityRestController
 			);
 		}
 
-		// Retention: bound table growth right after a successful insert.
-		$this->repository->pruneToCap(self::RETENTION_CAP);
+		$this->repository->pruneConfigured();
 
-		return new WP_REST_Response(['id' => $id], 201);
+		/**
+		 * Filters whether a normalized Site tools activity event is exported.
+		 *
+		 * @since 0.16.0
+		 *
+		 * @param bool                $shouldExport Whether to fire the exporter action.
+		 * @param array<string,mixed> $event        Normalized, allowlisted event data.
+		 * @param int                 $id           Stored activity row ID.
+		 */
+		$shouldExport = apply_filters('webmcp_activity_should_export', true, $event, $id);
+		if ($shouldExport) {
+			/**
+			 * Fires after a normalized Site tools activity event is stored.
+			 *
+			 * @since 0.16.0
+			 *
+			 * @param array<string,mixed> $event Normalized, allowlisted event data.
+			 * @param int                 $id    Stored activity row ID.
+			 */
+			do_action('webmcp_activity_stored', $event, $id);
+		}
+
+		return new WP_REST_Response(
+			['id' => $id, 'event_id' => $event['event_id']],
+			201
+		);
 	}
 
-	/**
-	 * Lists activity rows.
-	 *
-	 * With a `run_id` it returns the recent rows for that run (newest first); without
-	 * one it returns a per-run summary for the review screen. Each row's stored
-	 * `params` JSON is decoded back to an object for the client.
-	 *
-	 * @param WP_REST_Request<array<string,mixed>> $request The list request.
-	 * @return WP_REST_Response The matching rows with status 200.
-	 */
+	/** @return WP_REST_Response Administrator-only activity rows or run summaries. */
 	public function list(WP_REST_Request $request): WP_REST_Response
 	{
 		$runId = (string) $request['run_id'];
 		$limit = min(500, max(1, (int) $request['limit']));
 
 		if ('' !== $runId) {
-			$rows = array_map(
-				[$this, 'shapeRow'],
-				$this->repository->recentByRun($runId, $limit)
-			);
+			$rows = array_map([$this, 'shapeRow'], $this->repository->recentByRun($runId, $limit));
 
 			return new WP_REST_Response($rows, 200);
 		}
@@ -249,22 +216,67 @@ final class ActivityRestController
 	}
 
 	/**
-	 * Shapes one stored row for the client.
-	 *
-	 * Decodes the stored `params` JSON back into an object so the client receives a
-	 * structure, not a string. A null or malformed value decodes to an empty object.
-	 *
-	 * @param array<string,mixed> $row One row as read from the store.
-	 * @return array<string,mixed> The row with `params` decoded.
+	 * @return array{anonymous:bool,user_id:int,context:array<string,int|string>}|WP_Error
 	 */
+	private function authenticateContext(WP_REST_Request $request)
+	{
+		$authenticated = is_user_logged_in();
+		$audience = $authenticated ? 'authenticated' : 'anonymous';
+		$token = (string) $request->get_header('x_webmcp_activity_token');
+		$context = $this->token->validate($token, $audience);
+		if ($context instanceof WP_Error) {
+			return $context;
+		}
+
+		if ($authenticated) {
+			$nonce = (string) $request->get_header('x_wp_nonce');
+			if ('' === $nonce || !wp_verify_nonce($nonce, 'wp_rest')) {
+				return new WP_Error(
+					'webmcp_activity_invalid_nonce',
+					__('The activity request nonce is invalid.', 'webmcp-adapter'),
+					['status' => 403]
+				);
+			}
+		}
+
+		return [
+			'anonymous' => !$authenticated,
+			'user_id'   => $authenticated ? get_current_user_id() : 0,
+			'context'   => $context,
+		];
+	}
+
+	/** @return true|WP_Error */
+	private function validatePayloadSize(WP_REST_Request $request)
+	{
+		$body = $request->get_body();
+		if (strlen($body) <= self::MAX_PAYLOAD_BYTES) {
+			return true;
+		}
+
+		return new WP_Error(
+			'webmcp_activity_payload_too_large',
+			__('The activity payload is too large.', 'webmcp-adapter'),
+			['status' => 413]
+		);
+	}
+
+	/** @param array<string,mixed> $row Stored row. */
 	private function shapeRow(array $row): array
 	{
-		$decoded = is_string($row['params'] ?? null)
-			? json_decode((string) $row['params'], true)
-			: null;
-
-		$row['params'] = is_array($decoded) ? $decoded : [];
+		unset($row['session_token']);
+		$row['params'] = $this->decodeJsonObject($row['params'] ?? null);
+		$row['safe_summary'] = $this->decodeJsonObject($row['safe_summary'] ?? null);
+		$row['legacy'] = empty($row['event_id']);
 
 		return $row;
+	}
+
+	/** @param mixed $value Stored JSON string. @return array<string,mixed> */
+	private function decodeJsonObject($value): array
+	{
+		$decoded = is_string($value) ? json_decode($value, true) : null;
+
+		return is_array($decoded) ? $decoded : [];
 	}
 }

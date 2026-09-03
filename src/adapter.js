@@ -23,6 +23,12 @@ import {
 } from 'webmcp-adapter/adapter-contract';
 import { createActivityPresenter } from 'webmcp-adapter/activity';
 import {
+	buildSafeActivitySummary,
+	classifyResolvedActivity,
+	createActivityRecorder,
+	mintActivityId,
+} from 'webmcp-adapter/activity-observability';
+import {
 	confirmRiskyAction,
 	throwIfAborted,
 } from 'webmcp-adapter/confirmation';
@@ -37,6 +43,8 @@ const modelContext = document.modelContext || navigator.modelContext;
 // once here; a missing/unparseable/non-object value yields an empty map (fail-safe:
 // every tool is linkless).
 const SCREEN_LINKS = readModuleObject( 'screenLinks' );
+const ACTIVITY_CONFIG = readModuleObject( 'activity' );
+const activityRecorder = createActivityRecorder( ACTIVITY_CONFIG );
 
 // The wp-admin base URL, used to turn an admin-relative template into a same-origin
 // absolute link. Read once here; a missing/unparseable value yields an empty string,
@@ -66,11 +74,11 @@ const RUN_ID = ( () => {
 		if ( existing ) {
 			return existing;
 		}
-		const minted = crypto.randomUUID();
+		const minted = mintActivityId();
 		window.sessionStorage.setItem( 'webmcpRunId', minted );
 		return minted;
 	} catch {
-		return crypto.randomUUID();
+		return mintActivityId();
 	}
 } )();
 
@@ -207,8 +215,12 @@ function registerAbilityAsTool( ability, { toolName, risk, signal } ) {
 			},
 			execute: async ( params, context = {} ) => {
 				const invocationSignal = context?.signal;
-				const invocation = startActivity( ability, params ?? {} );
+				const invocation = startActivity( ability, params ?? {}, risk );
+				let confirmation = requiresConfirmationForRisk( risk )
+					? 'not_requested'
+					: 'not_required';
 				try {
+					throwIfRegistrationStale( signal );
 					throwIfAborted( invocationSignal );
 
 					if ( requiresConfirmationForRisk( risk ) ) {
@@ -224,10 +236,14 @@ function registerAbilityAsTool( ability, { toolName, risk, signal } ) {
 
 						if ( ! decision.approved ) {
 							const expired = decision.reason === 'expired';
+							confirmation = expired ? 'expired' : 'declined';
 							finishActivity( invocation, {
 								ability,
-								params: params ?? {},
 								outcome: expired ? 'expired' : 'declined',
+								confirmation,
+								errorCode: expired
+									? 'confirmation_expired'
+									: 'confirmation_declined',
 							} );
 							return {
 								cancelled: true,
@@ -236,27 +252,46 @@ function registerAbilityAsTool( ability, { toolName, risk, signal } ) {
 									: `The user declined this ${ risk } action in the page.`,
 							};
 						}
+						confirmation = 'confirmed';
 					}
 
+					throwIfRegistrationStale( signal );
 					throwIfAborted( invocationSignal );
 					const result = await executeAbility(
 						ability.name,
 						params ?? {}
 					);
+					const final = classifyResolvedActivity( result );
 					finishActivity( invocation, {
 						ability,
-						params: params ?? {},
-						outcome: 'ran',
+						outcome: final.outcome,
+						confirmation,
+						errorCode: final.errorCode,
+						safeSummary: buildSafeActivitySummary(
+							ability.name,
+							result
+						),
 					} );
 					return result;
 				} catch ( error ) {
+					const stale = error?.code === 'webmcp_stale_registration';
+					const cancelled = error?.name === 'AbortError';
+					if ( cancelled && requiresConfirmationForRisk( risk ) ) {
+						confirmation = 'cancelled';
+					}
 					finishActivity( invocation, {
 						ability,
-						params: params ?? {},
-						outcome:
-							error?.name === 'AbortError'
-								? 'cancelled'
-								: 'failed',
+						outcome: stale
+							? 'stale'
+							: cancelled
+							? 'cancelled'
+							: 'failed',
+						confirmation,
+						errorCode: stale
+							? 'stale_registration'
+							: cancelled
+							? 'invocation_cancelled'
+							: 'ability_execution_failed',
 					} );
 					throw error;
 				}
@@ -286,7 +321,7 @@ function reportBridgeDiagnostic( { code, message, error } ) {
  * @param {Object} params Invocation arguments.
  * @return {Object} Activity handle and resolved presentation data.
  */
-function startActivity( ability, params ) {
+function startActivity( ability, params, risk ) {
 	const isWrite = ability.meta?.annotations?.readonly !== true;
 	const screenUrl = isWrite
 		? resolveScreenLink( ability.name, params )
@@ -301,48 +336,49 @@ function startActivity( ability, params ) {
 	} catch {
 		// Activity is presentation-only.
 	}
-	return { id, screenUrl };
+	return {
+		id,
+		screenUrl,
+		eventId: mintActivityId(),
+		startedAt: performance.now(),
+		risk,
+	};
 }
 
 /**
- * Updates the visible entry and records the completed outcome through the legacy
- * audit endpoint. Batch 7 owns the expanded backend outcome contract.
+ * Updates the visible entry and asynchronously records one bounded final event.
  *
  * @param {Object} invocation Activity handle.
  * @param {Object} options Final activity data.
  * @return {void}
  */
-function finishActivity( invocation, { ability, params, outcome } ) {
+function finishActivity(
+	invocation,
+	{ ability, outcome, confirmation, errorCode = null, safeSummary = null }
+) {
 	try {
 		activity.finish( invocation.id, outcome );
 	} catch {
 		// Activity is presentation-only.
 	}
 
-	// The existing endpoint does not yet accept cancellation or stale outcomes.
-	// Keep those visible in-tab without beginning the Batch 7 backend migration.
-	if (
-		! window.wp?.apiFetch ||
-		! [ 'ran', 'failed', 'declined', 'expired' ].includes( outcome )
-	) {
-		return;
-	}
-
 	try {
-		const activityParams = redactSensitiveActivityParams( ability, params );
-		window.wp
-			.apiFetch( {
-				path: '/webmcp/v1/activity',
-				method: 'POST',
-				data: {
-					run_id: RUN_ID,
-					ability: ability.name,
-					outcome,
-					screen_url: invocation.screenUrl,
-					params: activityParams,
-				},
-			} )
-			.catch( () => {} );
+		activityRecorder.record( {
+			event_id: invocation.eventId,
+			run_id: RUN_ID,
+			ability: ability.name,
+			outcome,
+			duration_ms: Math.max(
+				0,
+				Math.min(
+					86400000,
+					Math.round( performance.now() - invocation.startedAt )
+				)
+			),
+			confirmation,
+			error_code: errorCode,
+			...( safeSummary ? { safe_summary: safeSummary } : {} ),
+		} );
 	} catch {
 		// Audit-only recording must never alter the ability result.
 	}
@@ -356,43 +392,15 @@ function currentPageContext() {
 }
 
 /**
- * Redacts the General Settings provider's sensitive value before transport.
- *
- * The General Settings provider is the first page-scoped form provider and its
- * Administration Email input is explicitly sensitive. The backend redactor
- * remains the storage boundary, but removing this value here also keeps it out of
- * the same-origin audit request body and any intermediary exporter instrumentation.
- * Other ability parameters retain their current Batch 4 behavior until the
- * observability contract is generalized in its dedicated batch.
- *
- * @param {Object} ability Ability record.
- * @param {Object} params  Raw invocation parameters.
- * @return {Object} Parameters safe for the current activity transport.
- */
-function redactSensitiveActivityParams( ability, params ) {
-	if (
-		ability.name !== 'wordpress/settings/stage-general-form' ||
-		! Object.prototype.hasOwnProperty.call( params, 'administrationEmail' )
-	) {
-		return params;
-	}
-
-	return {
-		...params,
-		administrationEmail: '[redacted]',
-	};
-}
-
-/**
  * Hydrates the activity panel with this run's prior entries from the server.
  *
  * Called ONCE at adapter init (not on the store subscribe tick) so server history and
  * live entries never double-render. GETs the current run's recent rows (newest-first)
- * and, when there is at least one row, passes each to the isolated presenter. A row
- * is treated as link-bearing when its `screen_url` is a
- * non-empty string (only writes carry one server-side, so that presence is the correct
- * link signal). Hydrated labels use the slash ability name as-is; client-side label
- * resolution is not attempted (a minor cosmetic difference is acceptable).
+ * and, when there is at least one row, passes each to the isolated presenter.
+ * Additively preserved legacy rows may retain a `screen_url`; normalized Batch 7
+ * events are linkless because the server stores only their source page path.
+ * Hydrated labels use the slash Ability name as-is; client-side label resolution
+ * is not attempted (a minor cosmetic difference is acceptable).
  *
  * Audit/presentation-only and defensive: a `.catch` swallows any failure so it can never
  * surface to the page.
@@ -400,17 +408,12 @@ function redactSensitiveActivityParams( ability, params ) {
  * @return {void}
  */
 function hydrateActivityLog() {
-	if ( ! window.wp?.apiFetch ) {
+	if ( ACTIVITY_CONFIG.canReview !== true ) {
 		return;
 	}
 
-	window.wp
-		.apiFetch( {
-			path:
-				'/webmcp/v1/activity?run_id=' +
-				encodeURIComponent( RUN_ID ) +
-				'&limit=100',
-		} )
+	activityRecorder
+		.readRun( RUN_ID, 100 )
 		.then( ( rows ) => {
 			if ( ! Array.isArray( rows ) || rows.length === 0 ) {
 				return;
@@ -419,17 +422,34 @@ function hydrateActivityLog() {
 			for ( const row of rows ) {
 				const screenUrl =
 					typeof row.screen_url === 'string' ? row.screen_url : null;
+				const timestamp = row.recorded_at_gmt
+					? row.recorded_at_gmt.replace( ' ', 'T' ) + 'Z'
+					: row.created?.replace?.( ' ', 'T' );
 
 				activity.appendHistory( {
 					label: row.ability,
 					outcome: row.outcome,
 					screenUrl,
-					timeText: new Date( row.created ).toLocaleTimeString(),
+					timeText: timestamp
+						? new Date( timestamp ).toLocaleTimeString()
+						: '',
 					isWrite: screenUrl !== null && screenUrl !== '',
 				} );
 			}
 		} )
 		.catch( () => {} );
+}
+
+/** Throws when a removed/replaced Ability registration is invoked from stale UI. */
+function throwIfRegistrationStale( signal ) {
+	if ( ! signal?.aborted ) {
+		return;
+	}
+	const error = new Error(
+		'The Site tool registration is no longer valid for this document.'
+	);
+	error.code = 'webmcp_stale_registration';
+	throw error;
 }
 
 /**

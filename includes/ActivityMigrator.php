@@ -81,16 +81,31 @@ final class ActivityMigrator
 			id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
 			run_id varchar(64) NOT NULL,
 			user_id bigint(20) unsigned NOT NULL,
-			session_token varchar(64) NOT NULL,
+			session_token varchar(64) NOT NULL DEFAULT '',
 			created datetime NOT NULL,
 			ability varchar(191) NOT NULL,
 			outcome varchar(20) NOT NULL,
 			screen_url text NULL,
 			params longtext NULL,
+			event_id varchar(64) NULL,
+			actor_hash char(64) NULL,
+			recorded_at_gmt datetime NULL,
+			tool_name varchar(191) NULL,
+			provider varchar(100) NULL,
+			risk varchar(20) NULL,
+			surface varchar(20) NULL,
+			page_context varchar(100) NULL,
+			page_path text NULL,
+			duration_ms bigint(20) unsigned NULL,
+			confirmation_outcome varchar(20) NULL,
+			error_code varchar(64) NULL,
+			safe_summary text NULL,
 			PRIMARY KEY  (id),
+			UNIQUE KEY event_id (event_id),
 			KEY run_id (run_id),
 			KEY user_id (user_id),
-			KEY created (created)
+			KEY created (created),
+			KEY recorded_at_gmt (recorded_at_gmt)
 		) {$charset_collate};";
 
 		dbDelta($sql);

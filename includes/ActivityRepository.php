@@ -20,6 +20,12 @@ if (!defined('ABSPATH')) {
  */
 final class ActivityRepository
 {
+	/** @var int Default maximum age for stored events. */
+	public const DEFAULT_RETENTION_DAYS = 7;
+
+	/** @var int Default maximum number of stored events. */
+	public const DEFAULT_RETENTION_ROWS = 10000;
+
 	/**
 	 * Fully-qualified activity table name.
 	 *
@@ -52,7 +58,20 @@ final class ActivityRepository
 	 *     ability?: string,
 	 *     outcome?: string,
 	 *     screen_url?: string|null,
-	 *     params?: string|null
+	 *     params?: string|null,
+	 *     event_id?: string|null,
+	 *     actor_hash?: string|null,
+	 *     recorded_at_gmt?: string|null,
+	 *     tool_name?: string|null,
+	 *     provider?: string|null,
+	 *     risk?: string|null,
+	 *     surface?: string|null,
+	 *     page_context?: string|null,
+	 *     page_path?: string|null,
+	 *     duration_ms?: int|null,
+	 *     confirmation_outcome?: string|null,
+	 *     error_code?: string|null,
+	 *     safe_summary?: array<string,mixed>|string|null
 	 * } $row Activity fields.
 	 * @return int The new row id, or 0 on failure.
 	 */
@@ -60,18 +79,40 @@ final class ActivityRepository
 	{
 		$wpdb = $GLOBALS['wpdb'];
 
+		$safeSummary = $row['safe_summary'] ?? null;
+		if (is_array($safeSummary)) {
+			$safeSummary = wp_json_encode($safeSummary);
+		}
+
 		$data = [
-			'run_id'        => substr((string) ($row['run_id'] ?? ''), 0, 64),
-			'user_id'       => (int) ($row['user_id'] ?? 0),
-			'session_token' => substr((string) ($row['session_token'] ?? ''), 0, 64),
-			'created'       => (string) ($row['created'] ?? current_time('mysql')),
-			'ability'       => substr((string) ($row['ability'] ?? ''), 0, 191),
-			'outcome'       => substr((string) ($row['outcome'] ?? ''), 0, 20),
-			'screen_url'    => isset($row['screen_url']) ? (string) $row['screen_url'] : null,
-			'params'        => isset($row['params']) ? (string) $row['params'] : null,
+			'run_id'          => substr((string) ($row['run_id'] ?? ''), 0, 64),
+			'user_id'         => (int) ($row['user_id'] ?? 0),
+			'session_token'   => substr((string) ($row['session_token'] ?? ''), 0, 64),
+			'created'         => (string) ($row['created'] ?? current_time('mysql')),
+			'ability'         => substr((string) ($row['ability'] ?? ''), 0, 191),
+			'outcome'         => substr((string) ($row['outcome'] ?? ''), 0, 20),
+			'screen_url'      => isset($row['screen_url']) ? (string) $row['screen_url'] : null,
+			'params'          => isset($row['params']) ? (string) $row['params'] : null,
+			'event_id'        => isset($row['event_id']) ? substr((string) $row['event_id'], 0, 64) : null,
+			'actor_hash'      => isset($row['actor_hash']) ? substr((string) $row['actor_hash'], 0, 64) : null,
+			'recorded_at_gmt' => isset($row['recorded_at_gmt']) ? (string) $row['recorded_at_gmt'] : null,
+			'tool_name'       => isset($row['tool_name']) ? substr((string) $row['tool_name'], 0, 191) : null,
+			'provider'        => isset($row['provider']) ? substr((string) $row['provider'], 0, 100) : null,
+			'risk'            => isset($row['risk']) ? substr((string) $row['risk'], 0, 20) : null,
+			'surface'         => isset($row['surface']) ? substr((string) $row['surface'], 0, 20) : null,
+			'page_context'    => isset($row['page_context']) ? substr((string) $row['page_context'], 0, 100) : null,
+			'page_path'       => isset($row['page_path']) ? substr((string) $row['page_path'], 0, 1000) : null,
+			'duration_ms'     => isset($row['duration_ms']) ? max(0, (int) $row['duration_ms']) : null,
+			'confirmation_outcome' => isset($row['confirmation_outcome']) ? substr((string) $row['confirmation_outcome'], 0, 20) : null,
+			'error_code'      => isset($row['error_code']) ? substr((string) $row['error_code'], 0, 64) : null,
+			'safe_summary'    => is_string($safeSummary) ? substr($safeSummary, 0, 2000) : null,
 		];
 
-		$formats = ['%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s'];
+		$formats = [
+			'%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s',
+			'%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s',
+			'%s', '%d', '%s', '%s', '%s',
+		];
 
 		$inserted = $wpdb->insert($this->table, $data, $formats);
 
@@ -116,6 +157,8 @@ final class ActivityRepository
 	 * @return array<int,array{
 	 *     run_id: string,
 	 *     user_id: int,
+	 *     actor_hash: string,
+	 *     legacy: bool,
 	 *     action_count: int,
 	 *     first_activity: string,
 	 *     last_activity: string
@@ -129,6 +172,8 @@ final class ActivityRepository
 		$sql = $wpdb->prepare(
 			"SELECT run_id,
 				MAX(user_id) AS user_id,
+				MAX(actor_hash) AS actor_hash,
+				MIN(CASE WHEN event_id IS NULL THEN 1 ELSE 0 END) AS legacy,
 				COUNT(*) AS action_count,
 				MIN(created) AS first_activity,
 				MAX(created) AS last_activity
@@ -150,6 +195,8 @@ final class ActivityRepository
 			static fn(array $row): array => [
 				'run_id'         => (string) $row['run_id'],
 				'user_id'        => (int) $row['user_id'],
+				'actor_hash'      => (string) ($row['actor_hash'] ?? ''),
+				'legacy'          => 1 === (int) ($row['legacy'] ?? 0),
 				'action_count'   => (int) $row['action_count'],
 				'first_activity' => (string) $row['first_activity'],
 				'last_activity'  => (string) $row['last_activity'],
@@ -169,7 +216,7 @@ final class ActivityRepository
 	 * @param int $maxRows Number of most-recent rows to keep.
 	 * @return int Number of rows deleted.
 	 */
-	public function pruneToCap(int $maxRows = 2000): int
+	public function pruneToCap(int $maxRows = self::DEFAULT_RETENTION_ROWS): int
 	{
 		$wpdb    = $GLOBALS['wpdb'];
 		$maxRows = max(1, $maxRows);
@@ -195,5 +242,63 @@ final class ActivityRepository
 		);
 
 		return is_numeric($deleted) ? (int) $deleted : 0;
+	}
+
+	/**
+	 * Deletes events older than the configured age, including legacy rows.
+	 *
+	 * New rows use the server-owned UTC timestamp. Legacy rows fall back to their
+	 * original site-local `created` value so the additive migration does not need
+	 * to rewrite historical records.
+	 *
+	 * @param int $days Maximum event age in days.
+	 * @return int Number of rows deleted.
+	 */
+	public function pruneOlderThan(int $days = self::DEFAULT_RETENTION_DAYS): int
+	{
+		$wpdb = $GLOBALS['wpdb'];
+		$days = max(1, $days);
+		$gmtCutoff = gmdate('Y-m-d H:i:s', time() - ($days * DAY_IN_SECONDS));
+		$localCutoff = get_date_from_gmt($gmtCutoff);
+		$deleted = $wpdb->query(
+			$wpdb->prepare(
+				"DELETE FROM %i
+				WHERE (recorded_at_gmt IS NOT NULL AND recorded_at_gmt < %s)
+					OR (recorded_at_gmt IS NULL AND created < %s)",
+				$this->table,
+				$gmtCutoff,
+				$localCutoff
+			)
+		);
+
+		return is_numeric($deleted) ? (int) $deleted : 0;
+	}
+
+	/**
+	 * Applies the filterable seven-day/10,000-row retention contract.
+	 *
+	 * @return int Total rows removed by age and row cap.
+	 */
+	public function pruneConfigured(): int
+	{
+		/**
+		 * Filters the maximum age of stored Site tools activity.
+		 *
+		 * @since 0.16.0
+		 *
+		 * @param int $days Maximum age in days. Default 7.
+		 */
+		$days = (int) apply_filters('webmcp_activity_retention_days', self::DEFAULT_RETENTION_DAYS);
+
+		/**
+		 * Filters the maximum number of stored Site tools activity events.
+		 *
+		 * @since 0.16.0
+		 *
+		 * @param int $rows Maximum retained rows. Default 10,000.
+		 */
+		$rows = (int) apply_filters('webmcp_activity_retention_rows', self::DEFAULT_RETENTION_ROWS);
+
+		return $this->pruneOlderThan(max(1, $days)) + $this->pruneToCap(max(1, $rows));
 	}
 }

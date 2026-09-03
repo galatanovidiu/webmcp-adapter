@@ -721,7 +721,11 @@ try {
 			storedActivity.some(
 				( entry ) =>
 					entry.ability === 'wordpress/settings/stage-general-form' &&
-					entry.params?.administrationEmail === '[redacted]'
+					Object.keys( entry.params ?? {} ).length === 0 &&
+					entry.safe_summary?.changedFields?.includes(
+						'administrationEmail'
+					) &&
+					entry.safe_summary?.requiresUserSave === true
 			),
 		JSON.stringify( storedActivity )
 	);

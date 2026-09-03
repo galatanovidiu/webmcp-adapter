@@ -45,6 +45,12 @@ final class Plugin
 	/** @var string Consequential and privileged confirmation module. */
 	private const CONFIRMATION_MODULE_HANDLE = 'webmcp-adapter/confirmation';
 
+	/** @var string Bounded backend observability transport module. */
+	private const ACTIVITY_OBSERVABILITY_MODULE_HANDLE = 'webmcp-adapter/activity-observability';
+
+	/** @var string Daily activity-retention cron hook. */
+	public const ACTIVITY_PRUNE_HOOK = 'webmcp_adapter_prune_activity';
+
 	/**
 	 * Script module handle for the legacy all-admin editor provider.
 	 *
@@ -89,6 +95,8 @@ final class Plugin
 		// Server-rendered "Site tools activity" review screen under Tools. Reads the
 		// activity store; manage_options only.
 		(new ActivityScreen())->register();
+		add_action('init', [$this, 'scheduleActivityPruning']);
+		add_action(self::ACTIVITY_PRUNE_HOOK, [$this, 'pruneActivity']);
 
 		add_action('admin_enqueue_scripts', [$this, 'enqueueAdmin']);
 		add_action('wp_enqueue_scripts', [$this, 'enqueueFrontend']);
@@ -197,6 +205,13 @@ final class Plugin
 		);
 
 		wp_register_script_module(
+			self::ACTIVITY_OBSERVABILITY_MODULE_HANDLE,
+			WEBMCP_ADAPTER_URL . 'src/activity-observability.js',
+			[],
+			WEBMCP_ADAPTER_VERSION
+		);
+
+		wp_register_script_module(
 			self::CATEGORY_MODULE_HANDLE,
 			WEBMCP_ADAPTER_URL . 'src/abilities/category.js',
 			['@wordpress/abilities'],
@@ -260,6 +275,7 @@ final class Plugin
 				'@wordpress/abilities',
 				self::ABILITY_SYNCHRONIZER_MODULE_HANDLE,
 				self::ACTIVITY_MODULE_HANDLE,
+				self::ACTIVITY_OBSERVABILITY_MODULE_HANDLE,
 				self::CONFIRMATION_MODULE_HANDLE,
 			],
 			WEBMCP_ADAPTER_VERSION
@@ -280,7 +296,7 @@ final class Plugin
 	}
 
 	/**
-	 * Adds activity-link data to the adapter's script-module data.
+	 * Adds activity-link and hardened ingestion data to the adapter module.
 	 *
 	 * Core serializes this array into a `<script type="application/json"
 	 * id="wp-script-module-data-webmcp-adapter/adapter">` tag the adapter reads on
@@ -299,6 +315,46 @@ final class Plugin
 		$data['screenLinks'] = apply_filters('webmcp_screen_links', array());
 		$data['adminUrl']    = admin_url();
 
+		$authenticated       = is_user_logged_in();
+		$pageContext         = (new PageContext())->build();
+		$data['activity'] = [
+			'endpoint'      => esc_url_raw(rest_url('webmcp/v1/activity')),
+			'nonce'         => $authenticated ? wp_create_nonce('wp_rest') : null,
+			'token'         => (new ActivityToken())->issue(
+				$pageContext,
+				$authenticated ? 'authenticated' : 'anonymous'
+			),
+			'authenticated'  => $authenticated,
+			'canReview'      => current_user_can('manage_options'),
+		];
+
 		return $data;
+	}
+
+	/** Ensures the daily age-pruning job exists. */
+	public function scheduleActivityPruning(): void
+	{
+		if (!wp_next_scheduled(self::ACTIVITY_PRUNE_HOOK)) {
+			wp_schedule_event(time() + HOUR_IN_SECONDS, 'daily', self::ACTIVITY_PRUNE_HOOK);
+		}
+	}
+
+	/** Applies the filterable seven-day/10,000-row activity retention contract. */
+	public function pruneActivity(): void
+	{
+		(new ActivityRepository())->pruneConfigured();
+	}
+
+	/** Creates the additive schema and schedules retention on activation. */
+	public static function activate(): void
+	{
+		(new ActivityMigrator())->maybeMigrate();
+		(new self())->scheduleActivityPruning();
+	}
+
+	/** Removes only the cron schedule; stored activity remains available. */
+	public static function deactivate(): void
+	{
+		wp_clear_scheduled_hook(self::ACTIVITY_PRUNE_HOOK);
 	}
 }
