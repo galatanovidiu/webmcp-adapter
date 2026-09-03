@@ -46,6 +46,18 @@ final class Plugin
 	 */
 	private const EDITOR_PROVIDER_MODULE_HANDLE = 'webmcp-adapter/editor-provider';
 
+	/** @var string Shared first-party Ability category module. */
+	private const CATEGORY_MODULE_HANDLE = 'webmcp-adapter/category';
+
+	/** @var string Page-context Ability provider module. */
+	private const PAGE_CONTEXT_MODULE_HANDLE = 'webmcp-adapter/page-context';
+
+	/** @var string Public navigation Ability provider module. */
+	private const SITE_DESTINATIONS_MODULE_HANDLE = 'webmcp-adapter/site-destinations';
+
+	/** @var string Management navigation Ability provider module. */
+	private const ADMIN_DESTINATIONS_MODULE_HANDLE = 'webmcp-adapter/admin-destinations';
+
 	/**
 	 * Registers WordPress hooks.
 	 *
@@ -68,17 +80,21 @@ final class Plugin
 		// activity store; manage_options only.
 		(new ActivityScreen())->register();
 
-		// Admin-only by default. Front-end exposure is opt-in and added later.
-		add_action('admin_enqueue_scripts', [$this, 'enqueueAdapter']);
+		add_action('admin_enqueue_scripts', [$this, 'enqueueAdmin']);
+		add_action('wp_enqueue_scripts', [$this, 'enqueueFrontend']);
 
 		// Ship the exposure toggles to the adapter as script-module data. The
 		// filter is registered unconditionally at load because core prints module
 		// data late (`print_script_module_data`), only for queued modules.
 		add_filter('script_module_data_' . self::MODULE_HANDLE, [$this, 'addModuleData']);
+		add_filter(
+			'script_module_data_' . self::PAGE_CONTEXT_MODULE_HANDLE,
+			[$this, 'addPageContextModuleData']
+		);
 	}
 
 	/**
-	 * Registers and enqueues the adapter script module.
+	 * Enqueues providers for the current wp-admin document.
 	 *
 	 * Depends on the Abilities API client module. The adapter reads the client
 	 * ability store and registers frontend abilities as WebMCP tools. It does not
@@ -86,16 +102,58 @@ final class Plugin
 	 *
 	 * @return void
 	 */
-	public function enqueueAdapter(): void
+	public function enqueueAdmin(): void
 	{
-		// Abilities API (server) must be present.
-		if (!function_exists('wp_get_abilities')) {
+		if (!$this->registerModules()) {
 			return;
 		}
 
-		// Script Modules API must be present (WordPress 6.5+).
-		if (!function_exists('wp_register_script_module') || !function_exists('wp_enqueue_script_module')) {
+		wp_enqueue_script_module(self::PAGE_CONTEXT_MODULE_HANDLE);
+		wp_enqueue_script_module(self::ADMIN_DESTINATIONS_MODULE_HANDLE);
+
+		$screen = function_exists('get_current_screen') ? get_current_screen() : null;
+		if ($screen instanceof \WP_Screen && $screen->is_block_editor()) {
+			wp_enqueue_script_module(self::EDITOR_PROVIDER_MODULE_HANDLE);
+		}
+
+		wp_enqueue_script_module(self::MODULE_HANDLE);
+	}
+
+	/**
+	 * Enqueues providers for the current normal frontend document.
+	 *
+	 * @return void
+	 */
+	public function enqueueFrontend(): void
+	{
+		if (!$this->registerModules()) {
 			return;
+		}
+
+		// WordPress 7.0's @wordpress/abilities module reads these classic globals.
+		wp_enqueue_script('wp-data');
+		wp_enqueue_script('wp-i18n');
+
+		wp_enqueue_script_module(self::PAGE_CONTEXT_MODULE_HANDLE);
+		wp_enqueue_script_module(self::SITE_DESTINATIONS_MODULE_HANDLE);
+		if (is_user_logged_in()) {
+			wp_enqueue_script_module(self::ADMIN_DESTINATIONS_MODULE_HANDLE);
+		}
+		wp_enqueue_script_module(self::MODULE_HANDLE);
+	}
+
+	/**
+	 * Registers the bridge and provider script modules once for this request.
+	 *
+	 * @return bool Whether the required WordPress APIs are available.
+	 */
+	private function registerModules(): bool
+	{
+		if (!function_exists('wp_get_abilities')) {
+			return false;
+		}
+		if (!function_exists('wp_register_script_module') || !function_exists('wp_enqueue_script_module')) {
+			return false;
 		}
 
 		wp_register_script_module(
@@ -113,9 +171,37 @@ final class Plugin
 		);
 
 		wp_register_script_module(
+			self::CATEGORY_MODULE_HANDLE,
+			WEBMCP_ADAPTER_URL . 'src/abilities/category.js',
+			['@wordpress/abilities'],
+			WEBMCP_ADAPTER_VERSION
+		);
+
+		wp_register_script_module(
+			self::PAGE_CONTEXT_MODULE_HANDLE,
+			WEBMCP_ADAPTER_URL . 'src/abilities/page-context.js',
+			['@wordpress/abilities', self::CATEGORY_MODULE_HANDLE],
+			WEBMCP_ADAPTER_VERSION
+		);
+
+		wp_register_script_module(
+			self::SITE_DESTINATIONS_MODULE_HANDLE,
+			WEBMCP_ADAPTER_URL . 'src/abilities/list-site-destinations.js',
+			['@wordpress/abilities', self::CATEGORY_MODULE_HANDLE],
+			WEBMCP_ADAPTER_VERSION
+		);
+
+		wp_register_script_module(
+			self::ADMIN_DESTINATIONS_MODULE_HANDLE,
+			WEBMCP_ADAPTER_URL . 'src/abilities/list-admin-destinations.js',
+			['@wordpress/abilities', self::CATEGORY_MODULE_HANDLE],
+			WEBMCP_ADAPTER_VERSION
+		);
+
+		wp_register_script_module(
 			self::EDITOR_PROVIDER_MODULE_HANDLE,
 			WEBMCP_ADAPTER_URL . 'src/abilities/index.js',
-			['@wordpress/abilities'],
+			['@wordpress/abilities', self::CATEGORY_MODULE_HANDLE],
 			WEBMCP_ADAPTER_VERSION
 		);
 
@@ -129,8 +215,18 @@ final class Plugin
 			WEBMCP_ADAPTER_VERSION
 		);
 
-		wp_enqueue_script_module(self::EDITOR_PROVIDER_MODULE_HANDLE);
-		wp_enqueue_script_module(self::MODULE_HANDLE);
+		return true;
+	}
+
+	/**
+	 * Adds the minimal current-document context to its provider module.
+	 *
+	 * @param array<string,mixed> $data Existing module data.
+	 * @return array<string,mixed> Page context data.
+	 */
+	public function addPageContextModuleData(array $data): array
+	{
+		return array_merge($data, (new PageContext())->build());
 	}
 
 	/**
