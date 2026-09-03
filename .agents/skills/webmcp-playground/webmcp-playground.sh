@@ -16,7 +16,6 @@
 # Env (optional):
 #   PORT=9400              Playground HTTP port
 #   WP=7.0  PHP=8.3        version pins
-#   ENABLE_WRITES=1        also expose non-destructive write tools (default: reads only)
 #   PW_VERSION=latest      @wp-playground/cli version (default: latest)
 #
 set -euo pipefail
@@ -73,25 +72,6 @@ ensure_playwright() {
 	fi
 }
 
-# Build the blueprint to use: the committed reads-only one, or a temp copy that also
-# enables write tools when ENABLE_WRITES=1.
-resolve_blueprint() {
-	local base="$SCRIPT_DIR/blueprint.json"
-	[ -f "$base" ] || die "blueprint.json missing next to this script."
-	if [ "${ENABLE_WRITES:-0}" = "1" ] || [ "${ENABLE_WRITES:-}" = "true" ]; then
-		local out="$RUNDIR/blueprint-writes.json"
-		node -e '
-			const fs = require("fs");
-			const bp = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-			bp.steps.push({ step: "setSiteOptions", options: { webmcp_enable_write_tools: "1" } });
-			fs.writeFileSync(process.argv[2], JSON.stringify(bp, null, 2));
-		' "$base" "$out"
-		echo "$out"
-	else
-		echo "$base"
-	fi
-}
-
 cmd_up() {
 	check_node
 	if server_up; then
@@ -103,7 +83,8 @@ cmd_up() {
 		die "The managed Playground process exists but $WP_URL is not responding. Run '$0 down' before retrying."
 	fi
 	[ -d "$ADAPTER_DIR" ] || die "Missing adapter plugin dir: $ADAPTER_DIR"
-	local blueprint; blueprint="$(resolve_blueprint)"
+	local blueprint="$SCRIPT_DIR/blueprint.json"
+	[ -f "$blueprint" ] || die "blueprint.json missing next to this script."
 
 	note "Booting Playground (WP $WP, PHP $PHP, port $PORT)… first run downloads WP, ~1 min."
 	nohup npx "@wp-playground/cli@$PW_VERSION" server \
@@ -123,8 +104,7 @@ cmd_up() {
 		if [ "$i" = "120" ]; then die "Playground did not come up in time. See $LOG"; fi
 	done
 	note "Ready: $WP_URL  (admin / password)"
-	note "Settings: $WP_URL/wp-admin/options-general.php?page=webmcp-adapter"
-	[ "${ENABLE_WRITES:-0}" = "1" ] && note "Write tools: ENABLED for this run." || true
+	note "Dashboard: $WP_URL/wp-admin/"
 }
 
 cmd_down() {
@@ -175,29 +155,27 @@ cmd_call() {
 }
 
 cmd_test() {
-	# A smoke test owns a fresh disposable state so gate values cannot leak from a
-	# prior run. cmd_down refuses to touch an unknown process.
+	# A smoke test owns a fresh disposable state. cmd_down refuses to touch an
+	# unknown process.
 	cmd_down
 	cmd_up
 	ensure_playwright
 	note "Listing tools…"
-	local names expected
+	local names
 	names="$(run_driver names --url /wp-admin/post.php?post=1\&action=edit)"
-	expected=8
-	if [ "${ENABLE_WRITES:-0}" = "1" ] || [ "${ENABLE_WRITES:-}" = "true" ]; then expected=16; fi
-	EXPECTED_COUNT="$expected" node -e '
+	node -e '
 		const fs = require("fs");
 		const actual = JSON.parse(fs.readFileSync(0, "utf8")).sort();
 		const base = ["webmcp.get-page-context","webmcp.list-admin-destinations"];
 		const reads = [...base,"webmcp.editor-context","webmcp.get-theme-design-tokens","webmcp.list-block-types","webmcp.list-patterns","webmcp.list-templates","webmcp.read-blocks"];
 		const writes = ["webmcp.edit-post-attributes","webmcp.insert-blocks","webmcp.insert-pattern","webmcp.move-blocks","webmcp.remove-blocks","webmcp.replace-blocks","webmcp.undo","webmcp.update-block-attributes"];
-		const expected = (Number(process.env.EXPECTED_COUNT) === 15 ? [...reads, ...writes] : reads).sort();
+		const expected = [...reads, ...writes, "webmcp.save-post"].sort();
 		if (JSON.stringify(actual) !== JSON.stringify(expected)) {
 			console.error(`Expected ${expected.length} exact frontend tools, received ${actual.length}: ${actual.join(", ")}`);
 			process.exit(1);
 		}
 	' <<< "$names"
-	note "Registered exact frontend tool set: $expected"
+	note "Registered exact frontend tool set: 17"
 	note "Executing a read tool (webmcp.editor-context)…"
 	run_driver call webmcp.editor-context '{}' --url /wp-admin/post.php?post=1\&action=edit
 	note "Smoke test passed. Playground stays up at $WP_URL — run '$0 down' to stop."

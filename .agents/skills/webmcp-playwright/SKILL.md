@@ -94,9 +94,8 @@ whose schema requires no arguments.
 ## Expected inventory
 
 - Generic wp-admin: 2 base read tools.
-- Default block editor: 8 tools (2 admin base tools plus 6 editor reads).
-- Block editor with writes enabled: 16 tools.
-- Block editor with writes plus destructive enabled: 17 tools, including `save-post`.
+- Compatible post and Site Editor screens: 17 tools (2 admin base plus all 15
+  editor tools), including `save-post`.
 - Anonymous frontend: 2 base reads; authenticated frontend: 3 base reads.
 - No `core-*`, `og-*`, or other `serverRegistered` ability may appear.
 
@@ -105,7 +104,7 @@ second read after several seconds must return the same set.
 
 ## Custom UI tests
 
-Use Playwright for tests that combine tool calls with the editor or settings UI.
+Use Playwright for tests that combine tool calls with the editor or page UI.
 After login, open the intended editor URL directly, wait for the block tree to
 settle, and then fetch tools.
 

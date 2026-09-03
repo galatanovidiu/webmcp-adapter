@@ -23,8 +23,8 @@ generic MCP bridge or backend ability catalog.
 
 ## Runtime contract
 
-- `src/abilities/` owns 16 frontend abilities: 7 reads, 8 unsaved editor writes,
-  and the destructive `save-post` persistence tool.
+- The block-editor provider owns 15 frontend abilities: 6 reads, 8 unsaved editor
+  writes, and the consequential `save-post` persistence tool.
 - Use one block-agnostic API over `{ name, attributes, innerBlocks }`. Do not add
   one ability per block type.
 - `edit-post-attributes` must reject `status`; `save-post` owns the explicit
@@ -44,12 +44,10 @@ generic MCP bridge or backend ability catalog.
 
 ## Safety
 
-- Read tools are always exposed.
-- Non-destructive editor writes require `webmcp_enable_write_tools`.
-- `save-post` also requires `webmcp_enable_destructive_tools` and the in-page
-  confirmation.
-- The confirmation requires an `event.isTrusted` click unless the explicit
-  default-off demo bypass is enabled.
+- Every applicable Ability with valid risk metadata is exposed; missing or invalid
+  mutation risk fails closed.
+- `save-post` always requires the in-page confirmation.
+- The confirmation always requires an `event.isTrusted` click.
 - Frontend callbacks must re-check the current editor context before mutating it.
 - Activity recording is audit-only and must never change the tool result.
 
@@ -69,10 +67,10 @@ generic MCP bridge or backend ability catalog.
 
 ## Verification
 
-- Default inventory: exactly 7 frontend tools.
-- Writes enabled: exactly 15 frontend tools.
-- Writes plus destructive enabled: exactly 16 frontend tools.
-- Assert every exposed name starts with `webmcp-` and no request is made to
+- Anonymous frontend: exactly 2 tools; authenticated frontend: exactly 3.
+- Generic wp-admin: exactly 2 tools.
+- Post and Site Editor: exactly 17 tools.
+- Assert core provider names use the collision-safe dot projection and no request is made to
   `/wp-abilities/v1/abilities`.
 - Exercise Dashboard, post editor, Site Editor, navigation/rediscovery, unsaved
   insert/read/undo, destructive decline/approve, registration rejection, and the

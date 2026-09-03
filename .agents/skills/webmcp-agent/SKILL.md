@@ -49,13 +49,11 @@ A generic wp-admin page exposes `webmcp.get-page-context` and
 - `webmcp.list-patterns`
 - `webmcp.list-templates`
 
-With **Enable write tools** on, eight unsaved editor mutation tools join the block
-editor inventory: insert/update/remove/move/replace blocks, insert patterns, edit
-post attributes, and undo.
+Eight unsaved editor mutation tools are also available: insert/update/remove/move/
+replace blocks, insert patterns, edit post attributes, and undo.
 
-With both write and destructive settings on, `webmcp.save-post` becomes the
-seventeenth block-editor tool. It opens the in-page confirmation before persisting
-or publishing.
+`webmcp.save-post` is the seventeenth block-editor tool. It always opens the in-page
+trusted-click confirmation before persisting or publishing.
 
 An anonymous frontend page exposes page context and site destinations. An
 authenticated frontend page also exposes admin destinations.
@@ -118,8 +116,7 @@ wp plugin install \
   --activate
 ```
 
-Leave write and destructive settings off unless the user explicitly wants changes
-on that site.
+Call editor mutation tools only when the user explicitly wants changes on that site.
 
 ## Deterministic CLI fallback
 
