@@ -9,11 +9,10 @@ Last updated: 3 September 2026.
 - Grilling complete; the user confirmed shared understanding.
 - Implementation plan approved as the next artifact:
   [`implementation-plan.md`](implementation-plan.md).
-- Batch 0 merged through pull request #9.
-- Batch 1 merged through pull request #10.
-- Batch 2 merged through pull request #11.
-- Batch 3 is complete on `feat/rendered-destinations`; editor gate removal has not
-  started.
+- Batches 0 through 6 are merged into `trunk` through pull requests #9 through
+  #15.
+- Batch 7 is complete on `feat/bounded-observability`; pull request #16 is open,
+  verified clean/mergeable, and authorized for merge.
 - The user authorized uninterrupted implementation, verification, pull requests,
   and merges through the remaining approved batches.
 
@@ -51,8 +50,8 @@ normal browser opens them.
 
 ## Next action
 
-Deliver and merge Batch 3, then start Batch 4 from updated trunk. Batch 4 owns the
-always-exposed editor provider, settings removal, and consequential save policy.
+Merge Batch 7, then start Batch 8 from updated `origin/trunk` in a separate task.
+Batch 8 owns only the disposable third-party provider extension proof.
 
 ## Session update: Batch 0
 
@@ -623,6 +622,109 @@ were pushed on `feat/activity-confirmation`. Pull request #15
 body, 13-file diff, three commits, empty status-check rollup, and
 CLEAN/MERGEABLE state verified. Delivery status at session stop is merged into
 `trunk`; the live merged state was verified. No release was created.
+
+## Session update: Batch 7
+
+Date: 3 September 2026.
+
+Batch and scope: bounded, redacted backend observability only. No Batch 8 fixture
+provider or Batch 9 public-document cleanup was started.
+
+Completed:
+
+- Migrated the existing activity table additively to a normalized event shape while
+  retaining all legacy columns and rows. New writes leave the legacy
+  `session_token`, `params`, and `screen_url` fields empty and never call
+  `wp_get_session_token()`.
+- Added one strict server-side normalizer for event/run IDs, Ability, projected tool
+  name, provider, risk, page surface/context/path, final outcome, duration,
+  confirmation outcome, bounded error code, and optional safe summary. Unknown
+  request fields, Abilities, risk/outcome combinations, and summary fields fail
+  closed.
+- Added cookie-authenticated REST nonce ingestion for every signed-in user and
+  short-lived signed page-context tokens for anonymous ingestion. Anonymous run and
+  actor identifiers are stored only as separate keyed hashes.
+- Added a 4 KB request cap plus fixed-window token/run and network rate limits. Rate
+  transient keys contain only keyed hashes; no raw IP address, token, or session ID
+  is stored.
+- Changed the bridge to send one fire-and-forget event only after execution settles,
+  including `ran`, `failed`, `declined`, `expired`, `cancelled`, and `stale`, with
+  measured duration and confirmation state. Audit failures remain unable to change
+  the Ability result.
+- Removed raw Ability inputs, outputs, page content, and arbitrary errors from the
+  request/storage/export path. General Settings contributes only allowlisted field
+  identifiers and `requiresUserSave`; its Administration Email value never enters
+  the request, table, review UI, or exporter event.
+- Documented and fired `webmcp_activity_stored` after successful storage, with
+  `webmcp_activity_should_export` as the bounded dispatch filter. Added code-level
+  filters for token lifetime, rate limits, Ability definitions, and retention.
+- Enforced seven-day and 10,000-row pruning after each insert and through a daily
+  scheduled task. Deactivation removes only the schedule, not stored review data.
+- Updated the administrator review to group authenticated, hashed-anonymous, and
+  legacy runs and to show normalized timestamps, tools, provider/risk, outcomes,
+  durations, confirmation, page context, safe summaries, and explicitly labeled
+  legacy detail without ever exposing legacy session tokens.
+
+Files changed:
+
+- `includes/ActivityEventNormalizer.php`, `includes/ActivityToken.php`, and
+  `includes/ActivityRateLimiter.php`
+- `includes/ActivityMigrator.php`, `includes/ActivityRepository.php`,
+  `includes/ActivityRestController.php`, and `includes/ActivityScreen.php`
+- `includes/Plugin.php` and `webmcp-adapter.php`
+- `src/activity-observability.js` and `src/adapter.js`
+- `tools/activity-contract.test.php`, `tools/activity-observability.test.mjs`,
+  `tools/verify-observability.php`, and `tools/verify-observability.mjs`
+- `tools/verify-general-form.mjs` and `package.json`
+- `.agents/scratches/page-scoped-webmcp/handoff.md`
+
+Verification performed:
+
+- `npm test`: 27 passed, 0 failed, including final-result outcome
+  classification, safe-summary filtering, and UUID generation.
+- `npm run test:php`: 31 passed, 0 failed. This covered token signing/audience and
+  tamper rejection, server-owned event normalization, raw-token/input exclusion,
+  anonymous hashing and rate limiting, risk/outcome/summary allowlists,
+  authenticated nonce rejection, payload caps, exporter data, and retention
+  defaults.
+- The disposable WordPress 7.0.4/PHP 8.3 runtime verifier passed 16 checks. It
+  recreated the legacy schema, migrated it without dropping its row, verified every
+  nullable event column, inserted a normalized row with empty legacy sensitive
+  fields, rendered both admin row shapes without the legacy token, removed an
+  eight-day-old event, enforced a test row cap, and found the daily prune schedule.
+- The complete system-Chrome WordPress 7.0.4 regression remained green: all seven
+  page-inventory rows, destinations 13/13, General Settings 26/26,
+  activity/confirmation 28/28, editor 88/88, and observability 24/24.
+- Live ingestion covered anonymous success, missing/invalid/oversized payload
+  rejection, rate-limit 429, authenticated nonce success/failure, hashed anonymous
+  review, sensitive General Settings summary, all six terminal outcomes, and the
+  administrator screen.
+- Codex's built-in browser on WordPress 7.0.4 discovered exactly two anonymous
+  frontend tools, two Dashboard tools, and 17 editor tools. It executed anonymous,
+  authenticated, and editor reads without a safety bypass; the activity UI recorded
+  them, and administrator review displayed the hashed anonymous run plus normalized
+  authenticated event details.
+- Repository-wide PHP syntax, changed JavaScript/JSON syntax, WordPress formatting
+  for changed JavaScript, and `git diff --check` passed.
+
+Open risks or failures:
+
+- Pull request #16 has no configured CI checks; all evidence is local and live.
+- Third-party client Abilities must add a server-side definition through
+  `webmcp_activity_ability_definitions` before their events are accepted. Batch 8
+  owns the disposable provider proof and documentation of that paired contract.
+- Current system Chrome may cancel the outer invocation without forwarding its
+  callback signal. The existing 60-second confirmation expiry remains the page-side
+  bound when no callback cancellation reaches the adapter.
+
+Exact next action: merge pull request #16, then begin only Batch 8 from freshly
+updated `origin/trunk` in a new task. Do not begin Batch 9 with Batch 8.
+
+Commit/push status: runtime commit `3c1c4be` and verification commit `472636d` are
+pushed on `feat/bounded-observability`. Pull request #16
+(`https://github.com/galatanovidiu/webmcp-adapter/pull/16`) has its title, body,
+two-commit implementation/verification diff, empty status-check rollup, and
+CLEAN/MERGEABLE state verified. Merge follows after this handoff commit is pushed.
 
 ## Session update template
 
