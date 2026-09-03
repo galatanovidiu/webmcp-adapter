@@ -27,14 +27,14 @@ Prefer the standard API:
 
 ```js
 const tools = await document.modelContext.getTools();
-const tool = tools.find(({ name }) => name === 'webmcp-editor-context');
+const tool = tools.find(({ name }) => name === 'webmcp.editor-context');
 const result = await document.modelContext.executeTool(tool, {});
 ```
 
 Current Chrome may expose `inputSchema` as a JSON string. Parse it before printing
 or asserting it. Some builds also retain the earlier JSON-string input shape for
 standard `executeTool`; detect that shape once with the harmless
-`webmcp-editor-context` read and never retry a write after an execution error.
+`webmcp.editor-context` read and never retry a write after an execution error.
 Chrome 149's `navigator.modelContextTesting.listTools()` and
 `executeTool(name, jsonString)` remain fallback-only.
 
@@ -77,7 +77,7 @@ WP_URL=http://localhost:8888 \
   node .agents/skills/webmcp-playwright/driver.mjs list --url /wp-admin/site-editor.php
 
 WP_URL=http://localhost:8888 \
-  node .agents/skills/webmcp-playwright/driver.mjs call webmcp-editor-context '{}' \
+  node .agents/skills/webmcp-playwright/driver.mjs call webmcp.editor-context '{}' \
     --url /wp-admin/post-new.php?post_type=page
 ```
 
@@ -111,7 +111,7 @@ Destructive calls show the plugin confirmation modal. Playwright clicks are trus
 browser events and can approve it:
 
 ```js
-const resultPromise = executeTool('webmcp-save-post', {});
+const resultPromise = executeTool('webmcp.save-post', {});
 await page.click('[data-webmcp-confirm-accept]');
 const result = await resultPromise;
 ```

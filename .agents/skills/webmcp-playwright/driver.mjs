@@ -122,7 +122,7 @@ async function detectStandardInputMode(page) {
 				(!Array.isArray(inputSchema?.required) || inputSchema.required.length === 0);
 		};
 		const probe = tools.find((tool) =>
-			['webmcp.get-page-context', 'webmcp-editor-context'].includes(tool.name) &&
+			['webmcp.get-page-context', 'webmcp.editor-context'].includes(tool.name) &&
 			noInputRead(tool)
 		) || tools.find(noInputRead);
 		if (!probe) {

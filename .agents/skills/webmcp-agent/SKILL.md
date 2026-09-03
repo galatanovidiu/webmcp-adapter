@@ -41,19 +41,19 @@ invocation contains no task.
 
 The default inventory is exactly seven read tools:
 
-- `webmcp-navigate`
-- `webmcp-editor-context`
-- `webmcp-read-blocks`
-- `webmcp-list-block-types`
-- `webmcp-get-theme-design-tokens`
-- `webmcp-list-patterns`
-- `webmcp-list-templates`
+- `webmcp.navigate`
+- `webmcp.editor-context`
+- `webmcp.read-blocks`
+- `webmcp.list-block-types`
+- `webmcp.get-theme-design-tokens`
+- `webmcp.list-patterns`
+- `webmcp.list-templates`
 
 With **Enable write tools** on, eight unsaved editor mutation tools join the
 inventory: insert/update/remove/move/replace blocks, insert patterns, edit post
 attributes, and undo.
 
-With both write and destructive settings on, `webmcp-save-post` becomes the
+With both write and destructive settings on, `webmcp.save-post` becomes the
 sixteenth tool. It opens the in-page confirmation before persisting or publishing.
 
 No server abilities are exposed. Do not expect `core-*`, `og-*`, media, plugin,
@@ -62,21 +62,21 @@ theme, site-option, comment, user, or server-side content tools.
 ## Editor workflow
 
 1. Open the post editor or Site Editor directly.
-2. Call `webmcp-editor-context` to identify the open document, save state, and the
+2. Call `webmcp.editor-context` to identify the open document, save state, and the
    user's current selection.
-3. Read block contracts with `webmcp-list-block-types` and theme presets with
-   `webmcp-get-theme-design-tokens`.
-4. Read the live tree with `webmcp-read-blocks`.
+3. Read block contracts with `webmcp.list-block-types` and theme presets with
+   `webmcp.get-theme-design-tokens`.
+4. Read the live tree with `webmcp.read-blocks`.
 5. When writes are enabled, compose a complete recursive block tree in one
-   `webmcp-insert-blocks` call where practical. Use update/move/replace/remove for
+   `webmcp.insert-blocks` call where practical. Use update/move/replace/remove for
    targeted follow-up changes.
-6. Use `webmcp-edit-post-attributes` for title, slug, excerpt, template, terms, and
+6. Use `webmcp.edit-post-attributes` for title, slug, excerpt, template, terms, and
    meta. It never accepts `status`.
-7. Use `webmcp-undo` to recover unsaved changes.
-8. Call `webmcp-save-post` only when persistence is requested and confirm the exact
+7. Use `webmcp.undo` to recover unsaved changes.
+8. Call `webmcp.save-post` only when persistence is requested and confirm the exact
    arguments in the page.
 
-Build block specs from `webmcp-list-block-types`; do not assume attribute names.
+Build block specs from `webmcp.list-block-types`; do not assume attribute names.
 Block `clientId` values are not durable, so re-read immediately before targeted
 mutations.
 
@@ -120,7 +120,7 @@ on that site.
 export WP_URL=http://localhost:8888 WP_USER=admin WP_PASS=password
 node tools/webmcp.mjs setup "/wp-admin/post-new.php?post_type=page"
 node tools/webmcp.mjs list
-node tools/webmcp.mjs call webmcp-editor-context '{}'
+node tools/webmcp.mjs call webmcp.editor-context '{}'
 ```
 
 `call` arguments are a JSON string matching the listed `inputSchema`. A declined

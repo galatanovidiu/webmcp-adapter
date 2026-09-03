@@ -19,26 +19,26 @@ const WP_PASS = process.env.WP_PASS || 'password';
 const PROFILE_DIR = path.join(os.tmpdir(), `webmcp-verify-${Date.now()}`);
 const FLAGS = ['--enable-features=WebMCP,WebMCPTesting,DevToolsWebMCPSupport'];
 const READ_TOOL_NAMES = [
-	'webmcp-editor-context',
-	'webmcp-get-theme-design-tokens',
-	'webmcp-list-block-types',
-	'webmcp-list-patterns',
-	'webmcp-list-templates',
-	'webmcp-navigate',
-	'webmcp-read-blocks',
+	'webmcp.editor-context',
+	'webmcp.get-theme-design-tokens',
+	'webmcp.list-block-types',
+	'webmcp.list-patterns',
+	'webmcp.list-templates',
+	'webmcp.navigate',
+	'webmcp.read-blocks',
 ].sort();
 const WRITE_TOOL_NAMES = [
 	...READ_TOOL_NAMES,
-	'webmcp-edit-post-attributes',
-	'webmcp-insert-blocks',
-	'webmcp-insert-pattern',
-	'webmcp-move-blocks',
-	'webmcp-remove-blocks',
-	'webmcp-replace-blocks',
-	'webmcp-undo',
-	'webmcp-update-block-attributes',
+	'webmcp.edit-post-attributes',
+	'webmcp.insert-blocks',
+	'webmcp.insert-pattern',
+	'webmcp.move-blocks',
+	'webmcp.remove-blocks',
+	'webmcp.replace-blocks',
+	'webmcp.undo',
+	'webmcp.update-block-attributes',
 ].sort();
-const COMPLETE_TOOL_NAMES = [...WRITE_TOOL_NAMES, 'webmcp-save-post'].sort();
+const COMPLETE_TOOL_NAMES = [...WRITE_TOOL_NAMES, 'webmcp.save-post'].sort();
 let standardInputMode = null;
 
 async function listTools() {
@@ -83,8 +83,8 @@ async function detectStandardInputMode() {
 
 	standardInputMode = await page.evaluate(async () => {
 		const probe = (await document.modelContext.getTools())
-			.find((tool) => tool.window === window && tool.name === 'webmcp-editor-context');
-		if (!probe) throw new Error('The frontend read probe webmcp-editor-context is unavailable.');
+			.find((tool) => tool.window === window && tool.name === 'webmcp.editor-context');
+		if (!probe) throw new Error('The frontend read probe webmcp.editor-context is unavailable.');
 		try {
 			await document.modelContext.executeTool(probe, {});
 			return 'object';
@@ -186,7 +186,7 @@ try {
 		defaultTools.map((tool) => tool.name).join(', '));
 	await detectStandardInputMode();
 
-	const dashboardContextRaw = await executeTool('webmcp-editor-context');
+	const dashboardContextRaw = await executeTool('webmcp.editor-context');
 	const dashboardContext = typeof dashboardContextRaw === 'string'
 		? JSON.parse(dashboardContextRaw) : dashboardContextRaw;
 	check('editor-context is structured and reports no editor',
@@ -204,7 +204,7 @@ try {
 		JSON.stringify(writeNames) === JSON.stringify(WRITE_TOOL_NAMES),
 		writeTools.map((tool) => tool.name).join(', '));
 	check('save-post remains hidden without destructive gate',
-		!writeTools.some((tool) => tool.name === 'webmcp-save-post'));
+		!writeTools.some((tool) => tool.name === 'webmcp.save-post'));
 
 	// Enable the complete frontend set for the editor exercise.
 	await page.check('#webmcp_enable_destructive_tools', { force: true });
@@ -281,7 +281,7 @@ try {
 	let editorReady = false;
 	for (let i = 0; i < 30; i++) {
 		try {
-			editorReady = (await callTool('webmcp-editor-context')).inEditor === true;
+			editorReady = (await callTool('webmcp.editor-context')).inEditor === true;
 		} catch {
 			editorReady = false;
 		}
@@ -292,14 +292,15 @@ try {
 
 	console.log('\n== T0: registration ==');
 	for (const n of [
-		'webmcp-editor-context', 'webmcp-read-blocks', 'webmcp-list-templates',
-		'webmcp-move-blocks', 'webmcp-replace-blocks', 'webmcp-edit-post-attributes',
-		'webmcp-undo', 'webmcp-save-post',
+		'webmcp.editor-context', 'webmcp.read-blocks', 'webmcp.list-templates',
+		'webmcp.move-blocks', 'webmcp.replace-blocks', 'webmcp.edit-post-attributes',
+		'webmcp.undo', 'webmcp.save-post',
 	]) {
 		check(`tool registered: ${n}`, names.includes(n));
 	}
-	check('only frontend tools registered', names.every((name) => name.startsWith('webmcp-')),
-		names.filter((name) => !name.startsWith('webmcp-')).join(', '));
+	check('only the expected frontend tools registered',
+		names.every((name) => name.startsWith('webmcp.')),
+		names.filter((name) => !name.startsWith('webmcp.')).join(', '));
 	check('tools carry titles', tools.every((tool) => typeof tool.title === 'string' && tool.title.length > 0));
 	check('tools mark page content untrusted',
 		tools.every((tool) => tool.annotations?.untrustedContentHint === true));
@@ -346,8 +347,8 @@ try {
 	check('server and mixed-provenance abilities remain excluded',
 		afterServerProbe.length === 16 &&
 		!afterServerProbe.some((tool) => [
-			'webmcp-probe-server-only',
-			'webmcp-probe-mixed-provenance',
+			'webmcp-probe.server-only',
+			'webmcp-probe.mixed-provenance',
 		].includes(tool.name)));
 
 	const lateProbe = await page.evaluate(async () => {
@@ -371,11 +372,10 @@ try {
 	await page.waitForTimeout(500);
 	const afterLateProbe = await listTools();
 	check('late client ability registers exactly once',
-		afterLateProbe.filter((tool) => tool.name === 'webmcp-probe-late-client').length === 1 &&
+		afterLateProbe.filter((tool) => tool.name === 'webmcp-probe.late-client').length === 1 &&
 		afterLateProbe.length === 17,
 		afterLateProbe.map((tool) => tool.name).join(', '));
 
-	const pageErrorsBeforeCollision = pageErrors.length;
 	const collisionProbe = await page.evaluate(async () => {
 		try {
 			const abilities = await import('@wordpress/abilities');
@@ -398,26 +398,76 @@ try {
 			return { ok: false, error: String(error) };
 		}
 	});
-	check('collision probe abilities registered in the store', collisionProbe.ok,
+	check('formerly colliding probe abilities registered in the store', collisionProbe.ok,
 		collisionProbe.error || '');
 	await page.waitForTimeout(500);
 	const afterCollisionProbe = await listTools();
-	check('exactly one normalized collision tool registers',
-		afterCollisionProbe.filter((tool) => tool.name === 'webmcp-probe-collision').length === 1,
+	check('slash-to-dot projection keeps formerly colliding names distinct',
+		['webmcp-probe.collision', 'webmcp.probe-collision'].every((name) =>
+			afterCollisionProbe.some((tool) => tool.name === name)) &&
+		afterCollisionProbe.length === 19,
 		afterCollisionProbe.map((tool) => tool.name).join(', '));
-	check('normalized collision rejection is reported',
-		adapterWarnings.some((warning) => warning.includes('probe-collision')),
+	check('injective projected names produce no registration warning',
+		!adapterWarnings.some((warning) => warning.includes('probe-collision')),
+		adapterWarnings.join(' | '));
+	const removedLateProbe = await page.evaluate(async () => {
+		const abilities = await import('@wordpress/abilities');
+		abilities.unregisterAbility('webmcp-probe/late-client');
+		return true;
+	});
+	check('late Ability was unregistered from the WordPress store', removedLateProbe);
+	await page.waitForTimeout(500);
+	const afterLateRemoval = await listTools();
+	check('removing an Ability aborts its WebMCP registration',
+		!afterLateRemoval.some((tool) => tool.name === 'webmcp-probe.late-client'),
+		afterLateRemoval.map((tool) => tool.name).join(', '));
+
+	const pageErrorsBeforeRegistrationRejection = pageErrors.length;
+	const rejectionProbe = await page.evaluate(async () => {
+		try {
+			const modelContext = document.modelContext || navigator.modelContext;
+			const controller = new AbortController();
+			await modelContext.registerTool({
+				name: 'webmcp-probe.registration-rejection',
+				description: 'Temporary direct registration used to force a duplicate-name rejection.',
+				inputSchema: { type: 'object', properties: {} },
+				execute: async () => ({ direct: true }),
+			}, { signal: controller.signal });
+			window.__webmcpRegistrationRejectionController = controller;
+
+			const abilities = await import('@wordpress/abilities');
+			abilities.registerAbility({
+				name: 'webmcp-probe/registration-rejection',
+				category: 'webmcp-probe',
+				label: 'Registration rejection probe',
+				description: 'Must remain retryable after WebMCP rejects its projected name.',
+				input_schema: { type: 'object', properties: {}, additionalProperties: false },
+				meta: { annotations: { readonly: true, clientRegistered: true } },
+				callback: async () => ({ projected: true }),
+			});
+			return { ok: true };
+		} catch (error) {
+			return { ok: false, error: String(error) };
+		}
+	});
+	check('duplicate WebMCP registration probe was established', rejectionProbe.ok,
+		rejectionProbe.error || '');
+	await page.waitForTimeout(500);
+	check('registration rejection is reported',
+		adapterWarnings.some((warning) => warning.includes('registration-rejection')),
 		adapterWarnings.join(' | '));
 	check('registration rejection is handled',
-		pageErrors.length === pageErrorsBeforeCollision,
-		pageErrors.slice(pageErrorsBeforeCollision).join(' | '));
-	const savePostTool = tools.find((t) => t.name === 'webmcp-save-post');
+		pageErrors.length === pageErrorsBeforeRegistrationRejection,
+		pageErrors.slice(pageErrorsBeforeRegistrationRejection).join(' | '));
+	await page.evaluate(() =>
+		window.__webmcpRegistrationRejectionController?.abort());
+	const savePostTool = tools.find((t) => t.name === 'webmcp.save-post');
 	check('save-post description carries the destructive ⚠ prefix',
 		Boolean(savePostTool && savePostTool.description.startsWith('⚠')),
 		savePostTool ? savePostTool.description.slice(0, 40) : 'tool missing');
 
 	console.log('\n== T1: editor-context (initial) ==');
-	const ctx1 = await callTool('webmcp-editor-context');
+	const ctx1 = await callTool('webmcp.editor-context');
 	check('inEditor', ctx1.inEditor === true);
 	check('postType page', ctx1.postType === 'page');
 	check('selection null initially', ctx1.selection === null);
@@ -427,7 +477,7 @@ try {
 		JSON.stringify(Object.keys(ctx1)));
 
 	console.log('\n== T2: insert-blocks ==');
-	const ins = await callTool('webmcp-insert-blocks', {
+	const ins = await callTool('webmcp.insert-blocks', {
 		blocks: [
 			{ name: 'core/paragraph', attributes: { content: 'Alpha' } },
 			{ name: 'core/paragraph', attributes: { content: 'Beta' } },
@@ -441,12 +491,12 @@ try {
 	let head = ins.tree[2].innerBlocks[0].clientId;
 
 	console.log('\n== T3: read-blocks names targeting ==');
-	const rb = await callTool('webmcp-read-blocks', { names: ['core/paragraph'] });
+	const rb = await callTool('webmcp.read-blocks', { names: ['core/paragraph'] });
 	check('matches shape', Array.isArray(rb.matches) && rb.matches.length === 2,
 		JSON.stringify(rb).slice(0, 200));
 	check('match has rootClientId+index',
 		rb.matches.every((m) => 'rootClientId' in m && typeof m.index === 'number'));
-	const rbProj = await callTool('webmcp-read-blocks', {
+	const rbProj = await callTool('webmcp.read-blocks', {
 		names: ['core/heading'], attributeKeys: ['level'],
 	});
 	check('attributeKeys projection', rbProj.matches?.[0] &&
@@ -454,7 +504,7 @@ try {
 		JSON.stringify(rbProj.matches?.[0]?.attributes));
 
 	console.log('\n== T4: batched update + single-undo ==');
-	const up = await callTool('webmcp-update-block-attributes', {
+	const up = await callTool('webmcp.update-block-attributes', {
 		updates: [
 			{ clientId: pAlpha, attributes: { content: 'Alpha updated' } },
 			{ clientId: pBeta, attributes: { content: 'Beta updated' } },
@@ -466,7 +516,7 @@ try {
 		return be.getBlocks().slice(0, 2).map((b) => String(b.attributes.content));
 	});
 	check('both contents updated', t4a.join('|') === 'Alpha updated|Beta updated', t4a.join('|'));
-	const un1 = await callTool('webmcp-undo', {});
+	const un1 = await callTool('webmcp.undo', {});
 	check('undo done', un1.done === true && un1.stepsPerformed === 1, JSON.stringify(un1));
 	const t4b = await truth(() => {
 		const be = wp.data.select('core/block-editor');
@@ -474,13 +524,13 @@ try {
 	});
 	check('ONE undo reverted BOTH patches (single undo step)',
 		t4b.join('|') === 'Alpha|Beta', t4b.join('|'));
-	const re1 = await callTool('webmcp-undo', { redo: true });
+	const re1 = await callTool('webmcp.undo', { redo: true });
 	check('redo done', re1.done === true, JSON.stringify(re1));
-	const re2 = await callTool('webmcp-undo', { redo: true });
+	const re2 = await callTool('webmcp.undo', { redo: true });
 	check('redo on empty stack reports done:false', re2.done === false, JSON.stringify(re2));
 
 	console.log('\n== T5: unset (top-level + nested) ==');
-	await callTool('webmcp-update-block-attributes', {
+	await callTool('webmcp.update-block-attributes', {
 		clientId: head,
 		attributes: { textAlign: 'center', style: { color: { background: '#ff0000', text: '#00ff00' } } },
 	});
@@ -489,7 +539,7 @@ try {
 		return { textAlign: a?.textAlign, bg: a?.style?.color?.background, text: a?.style?.color?.text };
 	});
 	check('set worked', t5a.textAlign === 'center' && t5a.bg === '#ff0000', JSON.stringify(t5a));
-	const unset = await callTool('webmcp-update-block-attributes', {
+	const unset = await callTool('webmcp.update-block-attributes', {
 		clientId: head, unset: ['textAlign', 'style.color.background'],
 	});
 	check('unset call ok', unset.updated === true, JSON.stringify(unset));
@@ -502,67 +552,67 @@ try {
 		JSON.stringify(t5b));
 
 	console.log('\n== T6: move-blocks ==');
-	const mv1 = await callTool('webmcp-move-blocks', { clientId: pBeta, index: 0 });
+	const mv1 = await callTool('webmcp.move-blocks', { clientId: pBeta, index: 0 });
 	check('reorder moved', mv1.moved === true && mv1.index === 0, JSON.stringify(mv1));
 	const t6a = await truth(() => wp.data.select('core/block-editor').getBlocks()[0].clientId);
 	check('Beta now first', t6a === pBeta);
-	const mv2 = await callTool('webmcp-move-blocks', { clientId: pAlpha, toRootClientId: grp, index: 0 });
+	const mv2 = await callTool('webmcp.move-blocks', { clientId: pAlpha, toRootClientId: grp, index: 0 });
 	check('reparent moved', mv2.moved === true, JSON.stringify(mv2));
 	const t6b = await truth(([id]) => wp.data.select('core/block-editor').getBlockRootClientId(id), [pAlpha]);
 	check('Alpha now inside group', t6b === grp, String(t6b));
-	const mv3 = await callTool('webmcp-move-blocks', { clientId: pAlpha, toRootClientId: '', index: 0 });
+	const mv3 = await callTool('webmcp.move-blocks', { clientId: pAlpha, toRootClientId: '', index: 0 });
 	check('move back to top', mv3.moved === true, JSON.stringify(mv3));
-	const mvBad = await callTool('webmcp-move-blocks', { clientId: 'nope-123', index: 0 });
+	const mvBad = await callTool('webmcp.move-blocks', { clientId: 'nope-123', index: 0 });
 	check('unknown id refused', mvBad.moved === false && /Unknown/.test(mvBad.reason), JSON.stringify(mvBad));
 
 	console.log('\n== T7: replace-blocks transformTo ==');
-	const tr1 = await callTool('webmcp-replace-blocks', { clientId: pAlpha, transformTo: 'core/heading' });
+	const tr1 = await callTool('webmcp.replace-blocks', { clientId: pAlpha, transformTo: 'core/heading' });
 	check('paragraph→heading', tr1.replaced === true && tr1.tree[0].name === 'core/heading', JSON.stringify(tr1));
 	const hAlpha = tr1.tree?.[0]?.clientId;
 	// Content is 'Alpha updated' here: T4's redo re-applied the batch patch.
 	const t7a = await truth(([id]) => String(wp.data.select('core/block-editor').getBlock(id)?.attributes.content), [hAlpha]);
 	check('content preserved through transform', t7a === 'Alpha updated', t7a);
-	const tr2 = await callTool('webmcp-replace-blocks', { clientId: hAlpha, transformTo: 'core/spacer' });
+	const tr2 = await callTool('webmcp.replace-blocks', { clientId: hAlpha, transformTo: 'core/spacer' });
 	check('impossible transform returns possibleTransforms',
 		tr2.replaced === false && Array.isArray(tr2.possibleTransforms) && tr2.possibleTransforms.length > 0,
 		JSON.stringify(tr2).slice(0, 200));
 
 	console.log('\n== T8: group / ungroup ==');
-	const gr = await callTool('webmcp-replace-blocks', { clientId: hAlpha, transformTo: 'core/group' });
+	const gr = await callTool('webmcp.replace-blocks', { clientId: hAlpha, transformTo: 'core/group' });
 	check('wrap in group', gr.replaced === true && gr.tree[0].name === 'core/group', JSON.stringify(gr).slice(0, 200));
 	const gid = gr.tree?.[0]?.clientId;
-	const ug = await callTool('webmcp-replace-blocks', { clientId: gid, ungroup: true });
+	const ug = await callTool('webmcp.replace-blocks', { clientId: gid, ungroup: true });
 	check('ungroup dissolves wrapper', ug.replaced === true && ug.tree[0].name === 'core/heading', JSON.stringify(ug).slice(0, 200));
-	const ugBad = await callTool('webmcp-replace-blocks', { clientId: pBeta, ungroup: true });
+	const ugBad = await callTool('webmcp.replace-blocks', { clientId: pBeta, ungroup: true });
 	check('ungroup non-wrapper refused', ugBad.replaced === false, JSON.stringify(ugBad));
 
 	console.log('\n== T9: edit-post-attributes ==');
-	const ep = await callTool('webmcp-edit-post-attributes', {
+	const ep = await callTool('webmcp.edit-post-attributes', {
 		title: 'Full Control Verify', slug: 'full-control-verify', excerpt: 'E2E check',
 	});
 	check('fields applied', ep.updated === true && ep.applied.title === 'Full Control Verify', JSON.stringify(ep));
-	const ctx2 = await callTool('webmcp-editor-context');
+	const ctx2 = await callTool('webmcp.editor-context');
 	check('editor-context reflects edits', ctx2.title === 'Full Control Verify' && ctx2.slug === 'full-control-verify');
 	// The client schema (additionalProperties:false) rejects `status` before the
 	// callback belt is even reached — executeTool REJECTS. Either layer passing
 	// is the security property we want.
-	const epStatus = await callTool('webmcp-edit-post-attributes', { status: 'publish' })
+	const epStatus = await callTool('webmcp.edit-post-attributes', { status: 'publish' })
 		.catch((e) => ({ schemaRejected: true, error: String(e).slice(0, 120) }));
 	check('status REJECTED (schema or callback)',
 		epStatus.schemaRejected === true ||
 			(epStatus.updated === false && /save-post/.test(epStatus.reason)),
 		JSON.stringify(epStatus).slice(0, 150));
-	const epSmuggle = await callTool('webmcp-edit-post-attributes', { taxonomies: { status: [1] } });
+	const epSmuggle = await callTool('webmcp.edit-post-attributes', { taxonomies: { status: [1] } });
 	check('taxonomy smuggle of post field REJECTED', epSmuggle.updated === false, JSON.stringify(epSmuggle));
 
 	console.log('\n== T10: selection read ==');
 	await page.evaluate(([id]) => wp.data.dispatch('core/block-editor').selectBlock(id), [pBeta]);
-	const ctx3 = await callTool('webmcp-editor-context');
+	const ctx3 = await callTool('webmcp.editor-context');
 	check('selection reported', ctx3.selection?.blocks?.[0]?.clientId === pBeta &&
 		ctx3.selection.blocks[0].name === 'core/paragraph', JSON.stringify(ctx3.selection));
 
 	console.log('\n== T11: list-templates ==');
-	const lt = await callTool('webmcp-list-templates');
+	const lt = await callTool('webmcp.list-templates');
 	check('templates listed', Array.isArray(lt.templates) && lt.templates.length > 0,
 		JSON.stringify(lt).slice(0, 200));
 	check('template parts listed', Array.isArray(lt.templateParts) && lt.templateParts.length > 0);
@@ -570,10 +620,10 @@ try {
 		lt.templates[0]?.editUrl);
 
 	console.log('\n== T12: save-post cancellation and decline ==');
-	const declined = await declineDestructive('webmcp-save-post', {});
+	const declined = await declineDestructive('webmcp.save-post', {});
 	check('save decline is structured', declined.cancelled === true,
 		JSON.stringify(declined));
-	const afterDecline = await callTool('webmcp-editor-context');
+	const afterDecline = await callTool('webmcp.editor-context');
 	check('decline leaves edits unsaved', afterDecline.isDirty === true);
 
 	const controlledCancellation = await page.evaluate(async () => {
@@ -620,7 +670,7 @@ try {
 			return false;
 		}
 		const tool = (await document.modelContext.getTools())
-			.find((item) => item.window === window && item.name === 'webmcp-save-post');
+			.find((item) => item.window === window && item.name === 'webmcp.save-post');
 		const controller = new AbortController();
 		window.__webmcpAbortController = controller;
 		const invocation = document.modelContext
@@ -647,23 +697,23 @@ try {
 			// immediately so the remainder can continue.
 			await page.click('[data-webmcp-confirm-cancel]', { force: true });
 		}
-		const afterAbort = await callTool('webmcp-editor-context');
+		const afterAbort = await callTool('webmcp.editor-context');
 		check('abort leaves edits unsaved', afterAbort.isDirty === true);
 	}
 
 	console.log('\n== T13: save-post (destructive, modal-confirmed) ==');
-	const sv1 = await callDestructive('webmcp-save-post', {});
+	const sv1 = await callDestructive('webmcp.save-post', {});
 	check('draft saved', sv1.saved === true && sv1.status === 'draft' && sv1.postId > 0, JSON.stringify(sv1));
 	createdPostId = sv1.postId || null;
-	const ctx4 = await callTool('webmcp-editor-context');
+	const ctx4 = await callTool('webmcp.editor-context');
 	check('not dirty after save', ctx4.isDirty === false);
 
 	console.log('\n== T14: save-post publish flow ==');
-	const sv2 = await callDestructive('webmcp-save-post', { status: 'publish' });
+	const sv2 = await callDestructive('webmcp.save-post', { status: 'publish' });
 	check('published', sv2.saved === true && sv2.status === 'publish', JSON.stringify(sv2));
 	createdPostId = sv2.postId || createdPostId;
 	check('live link', typeof sv2.link === 'string' && sv2.link.includes('full-control-verify'), sv2.link);
-	const sv3 = await callDestructive('webmcp-save-post', {});
+	const sv3 = await callDestructive('webmcp.save-post', {});
 	check('save with no changes reports honestly', sv3.saved === false && /Nothing to save/.test(sv3.reason), JSON.stringify(sv3));
 
 	const trashed = await page.evaluate(async (postId) => {
@@ -681,7 +731,7 @@ try {
 	console.log('\n== T15: navigation and rediscovery ==');
 	const [, navigationOutcome] = await Promise.all([
 		page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
-		executeTool('webmcp-navigate', { url: '/wp-admin/' }).then(
+		executeTool('webmcp.navigate', { url: '/wp-admin/' }).then(
 			(value) => ({ completed: true, value }),
 			(error) => ({ completed: false, error: String(error) })
 		),
@@ -698,7 +748,7 @@ try {
 	check('tools rediscover after same-origin navigation',
 		JSON.stringify(rediscovered.map((tool) => tool.name).sort()) ===
 			JSON.stringify(COMPLETE_TOOL_NAMES));
-	const dashboardAfterNavigation = await executeTool('webmcp-editor-context');
+	const dashboardAfterNavigation = await executeTool('webmcp.editor-context');
 	const dashboardAfter = typeof dashboardAfterNavigation === 'string'
 		? JSON.parse(dashboardAfterNavigation)
 		: dashboardAfterNavigation;
