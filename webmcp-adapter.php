@@ -28,7 +28,6 @@ define('WEBMCP_ADAPTER_FILE', __FILE__);
 define('WEBMCP_ADAPTER_DIR', plugin_dir_path(__FILE__));
 define('WEBMCP_ADAPTER_URL', plugin_dir_url(__FILE__));
 
-require_once WEBMCP_ADAPTER_DIR . 'includes/Settings.php';
 require_once WEBMCP_ADAPTER_DIR . 'includes/PageContext.php';
 require_once WEBMCP_ADAPTER_DIR . 'includes/Plugin.php';
 require_once WEBMCP_ADAPTER_DIR . 'includes/ActivityMigrator.php';

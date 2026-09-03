@@ -9,8 +9,8 @@
  * appears. It returns the FULL created clientId tree so the agent can then target
  * any inner block with update-block-attributes / remove-blocks.
  *
- * Not readonly → gated behind webmcp_enable_write_tools. Not destructive (an
- * unsaved, undo-able editor edit). Does NOT save the post.
+ * Risk `reversible`: this is an unsaved, undoable editor edit. It does not save the
+ * post.
  *
  * @package WebmcpAdapter
  */
@@ -74,9 +74,13 @@ registerAbility( {
 		required: [ 'blocks' ],
 		additionalProperties: false,
 	},
-	// readonly omitted (a write) → hidden unless webmcp_enable_write_tools is on.
 	meta: {
-		annotations: { readonly: false, clientRegistered: true },
+		annotations: {
+			readonly: false,
+			destructive: false,
+			idempotent: false,
+			clientRegistered: true,
+		},
 		webmcp: { risk: 'reversible' },
 	},
 	callback: async ( { blocks, rootClientId, index } = {} ) => {

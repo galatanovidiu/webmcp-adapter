@@ -66,7 +66,14 @@ registerAbility( {
 		properties: {},
 		additionalProperties: false,
 	},
-	meta: { annotations: { readonly: true, clientRegistered: true } },
+	meta: {
+		annotations: {
+			readonly: true,
+			destructive: false,
+			idempotent: true,
+			clientRegistered: true,
+		},
+	},
 	callback: async () => {
 		const ctx = getEditor();
 		if ( ! ctx ) {
@@ -100,7 +107,9 @@ registerAbility( {
 				'fontFamily'
 			),
 			spacingSizes: bySlug(
-				flatten( settings.spacingSizes ?? features.spacing?.spacingSizes ),
+				flatten(
+					settings.spacingSizes ?? features.spacing?.spacingSizes
+				),
 				'size'
 			),
 			layout: features.layout ?? {},

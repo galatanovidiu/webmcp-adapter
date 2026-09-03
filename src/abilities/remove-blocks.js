@@ -7,11 +7,8 @@
  * content (a stray "Hello world" paragraph) before building. Applies live and
  * unsaved.
  *
- * Not readonly → gated behind webmcp_enable_write_tools. NOT destructive-tier: like
- * every edit here it is an unsaved, Ctrl+Z-undo-able editor change, nothing is
- * deleted from the database. (Upgrade path: set meta.annotations.destructive:true
- * to route it through the confirmation modal if a site wants confirm-on-delete.)
- * Does NOT save the post.
+ * Risk `reversible`: like every editor mutation here it is an unsaved,
+ * Ctrl+Z-undoable change; nothing is deleted from the database. It does not save.
  *
  * removeBlocks fails SILENTLY when removal is refused (a locked block, templateLock,
  * or a block-removal-prompt rule that diverts into a dialog), so the callback
@@ -51,7 +48,12 @@ registerAbility( {
 		additionalProperties: false,
 	},
 	meta: {
-		annotations: { readonly: false, clientRegistered: true },
+		annotations: {
+			readonly: false,
+			destructive: false,
+			idempotent: true,
+			clientRegistered: true,
+		},
 		webmcp: { risk: 'reversible' },
 	},
 	callback: async ( { clientId, clientIds, selectPrevious } = {} ) => {

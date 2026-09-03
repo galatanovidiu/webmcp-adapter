@@ -37,7 +37,14 @@ registerAbility( {
 	},
 	// readonly:true → always exposed. clientRegistered survives client-side (no
 	// REST trip strips custom keys), marking this as a browser-only ability.
-	meta: { annotations: { readonly: true, clientRegistered: true } },
+	meta: {
+		annotations: {
+			readonly: true,
+			destructive: false,
+			idempotent: true,
+			clientRegistered: true,
+		},
+	},
 	callback: async () => {
 		const ctx = getEditor();
 		if ( ! ctx ) {

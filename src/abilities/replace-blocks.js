@@ -19,8 +19,7 @@
  * (canInsertBlockType) — the callback re-reads after dispatch, same idiom as
  * insert-blocks.
  *
- * Not readonly → gated behind webmcp_enable_write_tools. Not destructive. Does
- * NOT save the post.
+ * Risk `reversible`: changes remain unsaved and undoable. It does not save the post.
  *
  * @package WebmcpAdapter
  */
@@ -81,7 +80,12 @@ registerAbility( {
 		additionalProperties: false,
 	},
 	meta: {
-		annotations: { readonly: false, clientRegistered: true },
+		annotations: {
+			readonly: false,
+			destructive: false,
+			idempotent: true,
+			clientRegistered: true,
+		},
 		webmcp: { risk: 'reversible' },
 	},
 	callback: async ( {

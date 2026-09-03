@@ -12,8 +12,8 @@
  * write; the result reports hasUndo/hasRedo so an empty-stack call (a silent no-op
  * in core) is visible instead of faked.
  *
- * Not readonly → gated behind webmcp_enable_write_tools (it mutates editor state).
- * Not destructive: unsaved, and itself reversible via redo. Does NOT save.
+ * Risk `reversible`: it mutates only unsaved editor state and is itself reversible
+ * via redo. It does not save.
  *
  * @package WebmcpAdapter
  */
@@ -52,7 +52,12 @@ registerAbility( {
 		additionalProperties: false,
 	},
 	meta: {
-		annotations: { readonly: false, clientRegistered: true },
+		annotations: {
+			readonly: false,
+			destructive: false,
+			idempotent: false,
+			clientRegistered: true,
+		},
 		webmcp: { risk: 'reversible' },
 	},
 	callback: async ( { redo, steps } = {} ) => {
