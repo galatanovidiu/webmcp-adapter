@@ -80,8 +80,17 @@ registerAbility( {
 		},
 		additionalProperties: false,
 	},
-	meta: { annotations: { readonly: false, clientRegistered: true } },
-	callback: async ( { clientId, clientIds, blocks, transformTo, ungroup } = {} ) => {
+	meta: {
+		annotations: { readonly: false, clientRegistered: true },
+		webmcp: { risk: 'reversible' },
+	},
+	callback: async ( {
+		clientId,
+		clientIds,
+		blocks,
+		transformTo,
+		ungroup,
+	} = {} ) => {
 		const ctx = getEditor();
 		if ( ! ctx ) {
 			return { replaced: false, reason: NOT_IN_EDITOR };
@@ -104,10 +113,15 @@ registerAbility( {
 			? [ clientId ]
 			: [];
 		if ( ids.length === 0 ) {
-			return { replaced: false, reason: 'Provide clientId or clientIds.' };
+			return {
+				replaced: false,
+				reason: 'Provide clientId or clientIds.',
+			};
 		}
 
-		const unknown = ids.filter( ( id ) => ! ctx.blockEditor.getBlock( id ) );
+		const unknown = ids.filter(
+			( id ) => ! ctx.blockEditor.getBlock( id )
+		);
 		if ( unknown.length ) {
 			return {
 				replaced: false,
@@ -126,7 +140,8 @@ registerAbility( {
 		if ( strays.length ) {
 			return {
 				replaced: false,
-				reason: 'clientIds must be siblings (same parent). Different parent: ' +
+				reason:
+					'clientIds must be siblings (same parent). Different parent: ' +
 					strays.join( ', ' ),
 			};
 		}
@@ -178,7 +193,8 @@ registerAbility( {
 			if ( ! out || ! out.length ) {
 				return {
 					replaced: false,
-					reason: 'No registered transform from [' +
+					reason:
+						'No registered transform from [' +
 						targets.map( ( block ) => block.name ).join( ', ' ) +
 						'] to ' +
 						transformTo +

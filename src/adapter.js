@@ -15,10 +15,12 @@ import {
 	getAbilities,
 	store as abilitiesStore,
 } from '@wordpress/abilities';
+import { createAbilitySynchronizer } from 'webmcp-adapter/ability-synchronizer';
+import {
+	classifyAbilityRisk,
+	toWebMcpToolName,
+} from 'webmcp-adapter/adapter-contract';
 import { confirmDestructive, throwIfAborted } from './confirmation.js';
-// Frontend abilities: client-side abilities register into the same store on import,
-// so the subscribe-based sync below turns each into a WebMCP tool automatically.
-import './abilities/index.js';
 
 // `navigator.modelContext` is the live API in Chrome 149; `document.modelContext`
 // replaces it in Chrome 150. Prefer document, fall back to navigator.
@@ -104,7 +106,18 @@ const DESTRUCTIVE_NOTICE =
 	'⚠ PERSISTENT and consequential. Running this tool asks the user to confirm in the page before it proceeds; they may decline. ';
 
 if ( modelContext && typeof modelContext.registerTool === 'function' ) {
-	syncAbilitiesToTools();
+	const synchronizer = createAbilitySynchronizer( {
+		getAbilities,
+		subscribe: ( callback ) =>
+			window.wp?.data?.subscribe?.( callback, abilitiesStore ),
+		registerAbility: registerAbilityAsTool,
+		reportDiagnostic: reportBridgeDiagnostic,
+		classifyAbilityRisk,
+		toWebMcpToolName,
+		shouldRegisterAbility: ( ability ) =>
+			shouldExpose( ability.meta?.annotations ?? {} ),
+	} );
+	void synchronizer.start();
 	// Hydrate the panel with this run's prior activity ONCE here, at adapter init —
 	// not on the store subscribe tick — so server history and live entries never
 	// double-render.
@@ -242,71 +255,16 @@ function shouldExpose( annotations ) {
 }
 
 /**
- * Registers every frontend ability as a WebMCP tool, now and as more arrive.
- *
- * `@wordpress/abilities` marks browser-owned abilities with
- * `meta.annotations.clientRegistered`. Server abilities are excluded even if
- * another plugin loads them into the shared store. We register what is present,
- * then subscribe for frontend abilities registered later at runtime.
- *
- * @return {void}
- */
-function syncAbilitiesToTools() {
-	const registered = new Set();
-	const pending = new Set();
-
-	const sync = () => {
-		// getAbilities() is a synchronous data-store selector.
-		for ( const ability of getAbilities() ) {
-			const annotations = ability.meta?.annotations ?? {};
-
-			if (
-				annotations.clientRegistered !== true ||
-				annotations.serverRegistered === true
-			) {
-				continue;
-			}
-
-			if (
-				registered.has( ability.name ) ||
-				pending.has( ability.name )
-			) {
-				continue;
-			}
-			// Option-B gate. Writes are skipped without being marked registered,
-			// so they are re-evaluated on later store ticks (the decision is fixed
-			// per page load, so a skipped write stays skipped — fail-safe).
-			if ( ! shouldExpose( annotations ) ) {
-				continue;
-			}
-
-			pending.add( ability.name );
-			Promise.resolve()
-				.then( () => registerAbilityAsTool( ability ) )
-				.then( () => registered.add( ability.name ) )
-				.catch( ( error ) => {
-					console.warn(
-						`WebMCP could not register frontend ability "${ ability.name }".`,
-						error
-					);
-				} )
-				.finally( () => pending.delete( ability.name ) );
-		}
-	};
-
-	sync();
-
-	// wp-data ships as a classic-script dependency of @wordpress/abilities.
-	window.wp?.data?.subscribe?.( sync, abilitiesStore );
-}
-
-/**
  * Registers one ability as a WebMCP tool.
  *
- * @param {Object} ability The ability record from the client store.
+ * @param {Object} ability              The ability record from the client store.
+ * @param {Object} registration         Validated registration data.
+ * @param {string} registration.toolName Collision-safe projected tool name.
+ * @param {string} registration.risk     Validated WebMCP risk classification.
+ * @param {AbortSignal} registration.signal Signal that removes this registration.
  * @return {Promise<void>|void} Registration completion when the API is asynchronous.
  */
-function registerAbilityAsTool( ability ) {
+function registerAbilityAsTool( ability, { toolName, signal } ) {
 	const annotations = ability.meta?.annotations ?? {};
 	const baseDescription =
 		ability.description ?? ability.label ?? ability.name;
@@ -315,76 +273,92 @@ function registerAbilityAsTool( ability ) {
 			? DESTRUCTIVE_NOTICE + CONFIRMATION_MODE_NOTICE + baseDescription
 			: baseDescription;
 
-	return modelContext.registerTool( {
-		name: toToolName( ability.name ),
-		title: ability.label ?? ability.name,
-		description,
-		inputSchema: normalizeInputSchema( ability.input_schema ),
-		annotations: {
-			readOnlyHint: annotations.readonly === true,
-			// WordPress content, labels, and metadata may contain user-authored text.
-			untrustedContentHint: true,
-		},
-		execute: async ( params, context = {} ) => {
-			const signal = context?.signal;
-			throwIfAborted( signal );
+	return modelContext.registerTool(
+		{
+			name: toolName,
+			title: ability.label ?? ability.name,
+			description,
+			inputSchema: normalizeInputSchema( ability.input_schema ),
+			annotations: {
+				readOnlyHint: annotations.readonly === true,
+				// WordPress content, labels, and metadata may contain user-authored text.
+				untrustedContentHint: true,
+			},
+			execute: async ( params, context = {} ) => {
+				const invocationSignal = context?.signal;
+				throwIfAborted( invocationSignal );
 
-			// Destructive tools require an in-page trusted confirmation before they
-			// run. WebMCP has no built-in confirmation and the agent has no
-			// "destructive" hint it consumes, so this is the project's enforcement
-			// point: the user supervising the page can approve. Declining returns
-			// a structured cancellation (not an error) so the agent knows the action
-			// was refused, not that it failed.
-			if ( annotations.destructive === true ) {
-				const decision = await confirmDestructive(
-					ability,
-					params ?? {},
-					signal,
-					AUTOMATED_CONFIRMATION_ALLOWED
-				);
+				// Destructive tools require an in-page trusted confirmation before they
+				// run. WebMCP has no built-in confirmation and the agent has no
+				// "destructive" hint it consumes, so this is the project's enforcement
+				// point: the user supervising the page can approve. Declining returns
+				// a structured cancellation (not an error) so the agent knows the action
+				// was refused, not that it failed.
+				if ( annotations.destructive === true ) {
+					const decision = await confirmDestructive(
+						ability,
+						params ?? {},
+						invocationSignal,
+						AUTOMATED_CONFIRMATION_ALLOWED
+					);
 
-				if ( ! decision.approved ) {
-					const expired = decision.reason === 'expired';
+					if ( ! decision.approved ) {
+						const expired = decision.reason === 'expired';
+						logActivity( {
+							ability,
+							params: params ?? {},
+							outcome: expired ? 'expired' : 'declined',
+						} );
+
+						return {
+							cancelled: true,
+							reason: expired
+								? 'The confirmation expired before approval.'
+								: 'The user declined this destructive action in the page.',
+						};
+					}
+				}
+
+				// The invocation may have been cancelled while the confirmation was
+				// visible. Never let a late click execute an already-cancelled action.
+				throwIfAborted( invocationSignal );
+
+				let result;
+				try {
+					result = await executeAbility( ability.name, params ?? {} );
+				} catch ( error ) {
 					logActivity( {
 						ability,
 						params: params ?? {},
-						outcome: expired ? 'expired' : 'declined',
+						outcome: 'failed',
 					} );
-
-					return {
-						cancelled: true,
-						reason: expired
-							? 'The confirmation expired before approval.'
-							: 'The user declined this destructive action in the page.',
-					};
+					throw error; // never swallow the rejection
 				}
-			}
 
-			// The invocation may have been cancelled while the confirmation was
-			// visible. Never let a late click execute an already-cancelled action.
-			throwIfAborted( signal );
-
-			let result;
-			try {
-				result = await executeAbility( ability.name, params ?? {} );
-			} catch ( error ) {
 				logActivity( {
 					ability,
 					params: params ?? {},
-					outcome: 'failed',
+					outcome: 'ran',
 				} );
-				throw error; // never swallow the rejection
-			}
 
-			logActivity( {
-				ability,
-				params: params ?? {},
-				outcome: 'ran',
-			} );
-
-			return result;
+				return result;
+			},
 		},
-	} );
+		{ signal }
+	);
+}
+
+/**
+ * Reports bridge diagnostics without exposing raw site data.
+ *
+ * @param {Object} diagnostic         Bounded bridge diagnostic.
+ * @param {string} diagnostic.code    Stable diagnostic code.
+ * @param {string} diagnostic.message Human-readable diagnostic message.
+ * @param {*}      diagnostic.error   Optional registration error.
+ * @return {void}
+ */
+function reportBridgeDiagnostic( { code, message, error } ) {
+	console.warn( `[WebMCP ${ code }] ${ message }`, error ?? '' );
 }
 
 /**
@@ -409,7 +383,10 @@ function mountActivityLog() {
 
 	const panel = document.createElement( 'section' );
 	panel.id = 'webmcp-activity-log';
-	panel.setAttribute( 'aria-label', 'ChatGPT Work and Codex Site tools activity' );
+	panel.setAttribute(
+		'aria-label',
+		'ChatGPT Work and Codex Site tools activity'
+	);
 	panel.style.cssText =
 		'position:fixed;bottom:16px;right:16px;z-index:2147483646;width:320px;' +
 		'max-width:calc(100% - 32px);background:#fff;color:#1e1e1e;' +
@@ -687,18 +664,6 @@ function hydrateActivityLog() {
 			}
 		} )
 		.catch( () => {} );
-}
-
-/**
- * Converts an ability name into a WebMCP-safe tool name.
- *
- * Ability names use `namespace/name`; WebMCP tool names disallow `/`.
- *
- * @param {string} abilityName The ability name.
- * @return {string} A tool-safe name.
- */
-function toToolName( abilityName ) {
-	return abilityName.replace( /\//g, '-' );
 }
 
 /**

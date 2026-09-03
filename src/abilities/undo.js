@@ -36,18 +36,25 @@ registerAbility( {
 		properties: {
 			redo: {
 				type: 'boolean',
-				description: 'Default false (undo). true re-applies undone edits.',
+				description:
+					'Default false (undo). true re-applies undone edits.',
 			},
 			steps: {
 				type: 'integer',
 				minimum: 1,
 				maximum: MAX_STEPS,
-				description: 'How many history steps (default 1, max ' + MAX_STEPS + ').',
+				description:
+					'How many history steps (default 1, max ' +
+					MAX_STEPS +
+					').',
 			},
 		},
 		additionalProperties: false,
 	},
-	meta: { annotations: { readonly: false, clientRegistered: true } },
+	meta: {
+		annotations: { readonly: false, clientRegistered: true },
+		webmcp: { risk: 'reversible' },
+	},
 	callback: async ( { redo, steps } = {} ) => {
 		const ctx = getEditor();
 		if ( ! ctx ) {
@@ -72,7 +79,12 @@ registerAbility( {
 			direction: redo ? 'redo' : 'undo',
 			stepsPerformed: performed,
 			...( performed < wanted
-				? { reason: 'History exhausted after ' + performed + ' step(s).' }
+				? {
+						reason:
+							'History exhausted after ' +
+							performed +
+							' step(s).',
+				  }
 				: {} ),
 			hasUndo: ctx.editor.hasEditorUndo(),
 			hasRedo: ctx.editor.hasEditorRedo(),

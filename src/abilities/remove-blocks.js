@@ -50,7 +50,10 @@ registerAbility( {
 		},
 		additionalProperties: false,
 	},
-	meta: { annotations: { readonly: false, clientRegistered: true } },
+	meta: {
+		annotations: { readonly: false, clientRegistered: true },
+		webmcp: { risk: 'reversible' },
+	},
 	callback: async ( { clientId, clientIds, selectPrevious } = {} ) => {
 		const ctx = getEditor();
 		if ( ! ctx ) {
@@ -67,7 +70,9 @@ registerAbility( {
 		}
 
 		// Fail atomically on a bad id, so a typo is never reported as "removed".
-		const unknown = ids.filter( ( id ) => ! ctx.blockEditor.getBlock( id ) );
+		const unknown = ids.filter(
+			( id ) => ! ctx.blockEditor.getBlock( id )
+		);
 		if ( unknown.length ) {
 			return {
 				removed: false,
