@@ -1,5 +1,6 @@
 {
 	"name": "webmcp-adapter",
+	"description": "WordPress Site tools for ChatGPT Work and Codex in the ChatGPT desktop app's built-in browser.",
 	"type": "module",
 	"private": true,
 	"files": [

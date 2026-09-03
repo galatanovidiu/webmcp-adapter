@@ -13,7 +13,7 @@ if (!defined('ABSPATH')) {
 }
 
 /**
- * Exposes the gated record/list REST endpoints for agent activity.
+ * Exposes the gated record/list REST endpoints for Site tools activity.
  *
  * Registers two routes under `webmcp/v1/activity`:
  *  - POST records one tool call (audit-only): the server builds the row from the
@@ -205,7 +205,7 @@ final class ActivityRestController
 		if (0 === $id) {
 			// Audit-only path: log the detail server-side (debug only), return a generic error.
 			if (defined('WP_DEBUG') && WP_DEBUG) {
-				error_log('WebMCP Adapter: failed to record agent activity row.');
+				error_log('WebMCP Adapter: failed to record Site tools activity row.');
 			}
 
 			return new WP_Error(

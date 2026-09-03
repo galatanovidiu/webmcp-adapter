@@ -9,7 +9,7 @@ if (!defined('ABSPATH')) {
 }
 
 /**
- * Reads and writes agent-activity rows in the `{prefix}webmcp_activity` table.
+ * Reads and writes Site tools activity rows in the `{prefix}webmcp_activity` table.
  *
  * Wraps `$wpdb` so every query uses safe formats and prepared statements; values
  * are never interpolated into SQL. The table name is validated once at

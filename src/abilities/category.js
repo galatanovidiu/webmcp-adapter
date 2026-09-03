@@ -13,5 +13,6 @@ import { registerAbilityCategory } from '@wordpress/abilities';
 
 registerAbilityCategory( 'webmcp', {
 	label: 'WebMCP',
-	description: 'Client-side abilities that actuate the browser tab.',
+	description:
+		'Frontend WordPress Site tools for ChatGPT Work and Codex in the ChatGPT desktop app built-in browser.',
 } );

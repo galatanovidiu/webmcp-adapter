@@ -1,13 +1,16 @@
-# WebMCP Adapter
+# WordPress Site Tools for ChatGPT Work and Codex
 
 > **This is an experiment.** It is a proof of concept, not a production plugin. It
-> targets a draft browser API and exposes the open WordPress editor to an AI agent.
+> targets a draft browser API and exposes the open WordPress editor to ChatGPT Work
+> and Codex through Site tools.
 > Run it only on a local or throwaway site.
 
-A WordPress plugin that exposes frontend editor abilities through the imperative
-WebMCP API (`document.modelContext`). In the ChatGPT desktop app, Codex and ChatGPT
-Work can discover these actions as **Site tools** in the built-in browser and use
-them against the same live, signed-in editor the user sees.
+This WordPress plugin is built specifically for **ChatGPT Work and Codex Site
+tools** in the ChatGPT desktop app's built-in browser. It exposes frontend editor
+abilities through the imperative WebMCP API (`document.modelContext`) so ChatGPT
+Work or Codex can work against the same live, signed-in editor the user sees.
+
+It is not a generic MCP bridge or a backend automation catalog.
 
 The adapter is intentionally frontend-only. It does not load or expose WordPress
 server abilities. This keeps the page catalog focused on live editor collaboration
@@ -15,10 +18,10 @@ and avoids the locally reproduced failure where a 121-tool backend-heavy catalog
 made Codex reject the page configuration. OpenAI does not publish a numeric Site
 tools limit.
 
-## Try it in Codex
+## Try it with ChatGPT Work or Codex
 
-You need WordPress 7.0+, Node 22+, the latest ChatGPT desktop app, and a Codex model
-with Site tools support (currently GPT-5.6 Sol or GPT-5.6 Terra). Docker is required
+You need WordPress 7.0+, Node 22+, the latest ChatGPT desktop app, and a model with
+Site tools support (currently GPT-5.6 Sol or GPT-5.6 Terra). Docker is required
 only for the wp-env path below. In
 **Settings → Browser → Permissions**, keep **Enable site tools** on. Site tools are
 currently unavailable in Enterprise and Edu workspaces and may depend on rollout.
@@ -31,11 +34,12 @@ npx wp-env start
 ```
 
 Then open
-`http://localhost:8888/wp-admin/post-new.php?post_type=page` in Codex's built-in
+`http://localhost:8888/wp-admin/post-new.php?post_type=page` in the ChatGPT desktop
+app's built-in
 browser and sign in with wp-env's default `admin` / `password` credentials. Ask
-Codex to inspect the open editor or its selected blocks. The seven read tools appear
-after page registration settles; editor writes stay off until enabled under
-**Settings → WebMCP**.
+ChatGPT Work or Codex to inspect the open editor or its selected blocks. The seven
+read tools appear after page registration settles; editor writes stay off until
+enabled under **Settings → WebMCP**.
 
 For a no-Docker disposable environment, run:
 
@@ -48,6 +52,11 @@ Open the reported Settings URL or
 the public site root does not enqueue admin tools. The repository also ships
 Playwright and raw-CDP drivers for deterministic regression testing in system Chrome;
 see [development.md](docs/development.md).
+
+For the complete product boundary, read the
+[ChatGPT Work and Codex Site tools guide](docs/webmcp-learning-guide.md). A
+[speech-friendly PDF edition](output/pdf/webmcp-chatgpt-work-codex-site-tools-speechify.pdf)
+is also available.
 
 ## What it does
 
@@ -141,14 +150,14 @@ product layer is separate from the plugin's exposure gates and confirmation moda
 Every completed, failed, declined, or expired tool call is shown in a collapsible
 in-page panel. Activity is also persisted
 to the plugin's custom table, with parameter redaction and bounded retention, and can
-be reviewed under **Tools → Agent activity**.
+be reviewed under **Tools → Site tools activity**.
 
-## Codex limitations
+## ChatGPT Work and Codex limitations
 
-Codex currently discovers only imperative tools registered from JavaScript in the
-top-level document. Declarative form tools and tools registered inside iframes are
-not available as Site tools. This plugin registers in the top-level wp-admin shell;
-the Site Editor's canvas may remain in an iframe.
+ChatGPT Work and Codex currently discover only imperative tools registered from
+JavaScript in the top-level document. Declarative form tools and tools registered
+inside iframes are not available as Site tools. This plugin registers in the
+top-level wp-admin shell; the Site Editor's canvas may remain in an iframe.
 
 Tools are tab-bound and ephemeral. Navigating or reloading invalidates old handles,
 and the agent must discover the tools again on the new document.
@@ -158,15 +167,15 @@ and the agent must discover the tools again on the new document.
 - WordPress 7.0 or later.
 - PHP 8.1 or later.
 - Node.js 22 or later for local tooling.
-- A browser agent that supports the imperative WebMCP API.
+- The latest ChatGPT desktop app with Site tools enabled for ChatGPT Work or Codex.
 
-For Codex, use the built-in browser in the latest ChatGPT desktop app. Public sites
+Use the built-in browser in the latest ChatGPT desktop app. Public sites
 should use HTTPS; localhost is suitable for development.
 
 ## Install
 
-For a local trial, use the Codex quick start above. To install manually, download
-`webmcp-adapter.zip` from the
+For a local trial, use the ChatGPT Work/Codex quick start above. To install
+manually, download `webmcp-adapter.zip` from the
 [latest release](https://github.com/galatanovidiu/webmcp-adapter/releases/latest),
 upload it under **Plugins → Add New → Upload Plugin**, and activate **WebMCP
 Adapter**. No companion abilities plugin is required.

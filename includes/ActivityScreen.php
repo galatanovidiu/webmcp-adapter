@@ -9,7 +9,7 @@ if (!defined('ABSPATH')) {
 }
 
 /**
- * Server-rendered wp-admin "Agent activity" review screen.
+ * Server-rendered wp-admin "Site tools activity" review screen.
  *
  * Adds a read-only page under Tools that reads from {@see ActivityRepository}.
  * The sessions view lists one row per run (run id, owner, action count, first
@@ -61,8 +61,8 @@ final class ActivityScreen
 	{
 		add_submenu_page(
 			'tools.php',
-			__('Agent activity', 'webmcp-adapter'),
-			__('Agent activity', 'webmcp-adapter'),
+			__('Site tools activity', 'webmcp-adapter'),
+			__('Site tools activity', 'webmcp-adapter'),
 			'manage_options',
 			self::PAGE,
 			[$this, 'render']
@@ -77,13 +77,13 @@ final class ActivityScreen
 	public function render(): void
 	{
 		if (!current_user_can('manage_options')) {
-			wp_die(esc_html__('You do not have permission to view agent activity.', 'webmcp-adapter'));
+			wp_die(esc_html__('You do not have permission to view Site tools activity.', 'webmcp-adapter'));
 		}
 
 		$run = isset($_GET['run']) ? sanitize_text_field(wp_unslash($_GET['run'])) : '';
 
 		echo '<div class="wrap">';
-		echo '<h1>' . esc_html__('Agent activity', 'webmcp-adapter') . '</h1>';
+		echo '<h1>' . esc_html__('Site tools activity', 'webmcp-adapter') . '</h1>';
 
 		if ('' !== $run) {
 			$this->renderDetail($run);
@@ -167,7 +167,7 @@ final class ActivityScreen
 		$sessions = (new ActivityRepository())->listSessions(self::SESSIONS_LIMIT);
 
 		if (array() === $sessions) {
-			echo '<div class="notice notice-info inline"><p>' . esc_html__('No agent activity recorded yet.', 'webmcp-adapter') . '</p></div>';
+			echo '<div class="notice notice-info inline"><p>' . esc_html__('No Site tools activity recorded yet.', 'webmcp-adapter') . '</p></div>';
 
 			return;
 		}

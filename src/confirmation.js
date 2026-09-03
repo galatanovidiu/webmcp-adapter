@@ -52,7 +52,7 @@ export function confirmDestructive(
 		const intro = document.createElement( 'p' );
 		intro.style.cssText = 'margin:0 0 6px;';
 		intro.textContent =
-			'The AI agent is asking to run a persistent, consequential tool:';
+			'ChatGPT Work or Codex is asking to run a persistent, consequential Site tool:';
 
 		const tool = document.createElement( 'p' );
 		tool.style.cssText = 'margin:0 0 10px;font-weight:600;';

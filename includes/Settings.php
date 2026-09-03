@@ -48,10 +48,10 @@ final class Settings
 	 * rejects synthetic, page-script-dispatched clicks via `event.isTrusted`.
 	 * This is not proof of human intent: privileged browser automation can still
 	 * produce a trusted event. When an administrator turns this ON, the
-	 * adapter relaxes that gate so a script or agent can click the confirmation
+	 * adapter relaxes that gate so ChatGPT Work, Codex, or a test script can click the confirmation
 	 * automatically. Intended for demos / proof-of-concept recordings ONLY, never
 	 * production. Enabling it is a deliberate `manage_options` action; the in-page
-	 * agent cannot flip it. Default off; the exposure toggles remain the hard
+	 * Site tools client cannot flip it. Default off; the exposure toggles remain the hard
 	 * guards underneath.
 	 *
 	 * @var string
@@ -190,7 +190,7 @@ final class Settings
 			self::OPTION_ALLOW_AUTOMATED_CONFIRMATION,
 			[
 				'type'              => 'boolean',
-				'description'       => __('Allow a script or agent to confirm the in-page destructive prompt automatically (demo only).', 'webmcp-adapter'),
+				'description'       => __('Allow ChatGPT Work, Codex, or a test script to confirm the in-page persistence prompt automatically (demo only).', 'webmcp-adapter'),
 				'sanitize_callback' => static fn($value): bool => true === rest_sanitize_boolean($value),
 				'default'           => false,
 				'show_in_rest'      => false,
@@ -249,7 +249,7 @@ final class Settings
 			'<label for="%1$s"><input type="checkbox" id="%1$s" name="%1$s" value="1" %2$s /> %3$s</label>',
 			esc_attr(self::OPTION),
 			checked($enabled, true, false),
-			esc_html__('Expose write tools to the browser AI agent', 'webmcp-adapter')
+			esc_html__('Expose write tools to ChatGPT Work and Codex', 'webmcp-adapter')
 		);
 	}
 
@@ -297,8 +297,8 @@ final class Settings
 			'<label for="%1$s"><input type="checkbox" id="%1$s" name="%1$s" value="1" %2$s /> %3$s</label><p class="description">%4$s</p>',
 			esc_attr(self::OPTION_ALLOW_AUTOMATED_CONFIRMATION),
 			checked($enabled, true, false),
-			esc_html__('Let a script or AI agent confirm the in-page destructive prompt automatically, without a trusted event', 'webmcp-adapter'),
-			esc_html__('SECURITY: for demos / proof-of-concept recordings ONLY. When on, the page-script synthetic-click guard is relaxed and an unattended agent can approve its own destructive actions. Leave off in production. Default: off.', 'webmcp-adapter')
+			esc_html__('Let ChatGPT Work, Codex, or a test script confirm the in-page persistence prompt automatically, without a trusted event', 'webmcp-adapter'),
+			esc_html__('SECURITY: for demos / proof-of-concept recordings ONLY. When on, the page-script synthetic-click guard is relaxed and ChatGPT Work or Codex can approve a persistence action automatically. Leave off in production. Default: off.', 'webmcp-adapter')
 		);
 	}
 
@@ -319,7 +319,7 @@ final class Settings
 
 		printf(
 			'<div class="notice notice-warning"><p>%s</p></div>',
-			esc_html__('WebMCP: "Allow automated confirmation" is ON. The page-script synthetic-click guard is relaxed — an AI agent can approve its own destructive actions without a trusted click. Turn it off when you are done recording or testing.', 'webmcp-adapter')
+			esc_html__('WebMCP: "Allow automated confirmation" is ON. The page-script synthetic-click guard is relaxed — ChatGPT Work or Codex can approve a persistence action without a trusted click. Turn it off when you are done recording or testing.', 'webmcp-adapter')
 		);
 	}
 
@@ -336,6 +336,10 @@ final class Settings
 
 		echo '<div class="wrap">';
 		echo '<h1>' . esc_html(get_admin_page_title()) . '</h1>';
+		echo '<p>' . esc_html__(
+			'This plugin exposes frontend WordPress editor abilities as Site tools for ChatGPT Work and Codex in the ChatGPT desktop app’s built-in browser.',
+			'webmcp-adapter'
+		) . '</p>';
 		echo '<form action="options.php" method="post">';
 		settings_fields(self::PAGE);
 		do_settings_sections(self::PAGE);

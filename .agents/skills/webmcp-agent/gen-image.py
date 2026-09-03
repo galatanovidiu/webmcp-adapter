@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Generate ONE image via the Gemini image REST API and write it to a file.
+"""Legacy demo-asset helper; not part of the ChatGPT Work or Codex Site tools runtime.
+
+Generate ONE image via the Gemini image REST API and write it to a file.
+
+The adapter itself is built for ChatGPT Work and Codex in the ChatGPT desktop
+app's built-in browser. This standalone helper predates that product boundary.
 
 This is a plain HTTPS call to the Google Generative Language API — NOT the
 `gemini` CLI (that only emits text and cannot produce an image file). It reads

@@ -1,7 +1,8 @@
-# Architecture — frontend abilities to WebMCP
+# Architecture — WordPress Site tools for ChatGPT Work and Codex
 
-This plugin exposes the live WordPress editor to browser AI agents without turning
-the page into a second backend API.
+This plugin is built for ChatGPT Work and Codex Site tools in the ChatGPT desktop
+app's built-in browser. It exposes the live WordPress editor without turning the
+page into a second backend API.
 
 ## Boundary
 
@@ -57,14 +58,14 @@ Ability → WebMCP mapping:
 | `annotations.readonly` | `annotations.readOnlyHint` | |
 | frontend callback | `execute(params, { signal })` | Structured results are returned directly |
 
-Every registered definition sets `untrustedContentHint` to true because editor titles, content, patterns, and
-other site data can contain user-authored text.
+Every registered definition sets `untrustedContentHint` to true because editor
+titles, content, patterns, and other site data can contain user-authored text.
 
-## Codex Site tools contract
+## ChatGPT Work and Codex Site tools contract
 
-Codex discovers imperative WebMCP tools from the top-level document in the ChatGPT
-desktop app's built-in browser. It currently does not discover declarative form tools
-or tools registered inside iframes.
+ChatGPT Work and Codex discover imperative WebMCP tools from the top-level document
+in the ChatGPT desktop app's built-in browser. They currently do not discover
+declarative form tools or tools registered inside iframes.
 
 The adapter therefore registers on the wp-admin shell. The Site Editor canvas can
 remain in an iframe because the tools and `window.wp.data` stores used by the adapter
@@ -184,12 +185,13 @@ Every completed, failed, declined, or expired tool call appears in an in-page ac
 The adapter also sends an audit-only record to `/webmcp/v1/activity`. Server recording
 is fire-and-forget and cannot alter the tool result. Parameters are redacted before
 storage, retention is bounded, and administrators can review runs under
-**Tools → Agent activity**.
+**Tools → Site tools activity**.
 
 ## Verification
 
-The primary acceptance test uses Codex's built-in browser against a direct localhost
-wp-admin page. System Chrome drivers exercise the standard
+The primary acceptance test uses ChatGPT Work or Codex in the ChatGPT desktop app's
+built-in browser against a direct localhost wp-admin page. System Chrome drivers
+exercise the standard
 `document.modelContext.getTools()/executeTool(tool, inputObject)` path. They detect
 the input shape once with a harmless read for transitional builds, while the older
 JSON-string `modelContextTesting` hook remains a compatibility fallback.
