@@ -148,7 +148,7 @@ async function settledToolNames( page ) {
 	let previous = null;
 	let stableReads = 0;
 
-	for ( let attempt = 0; attempt < 20; attempt++ ) {
+	for ( let attempt = 0; attempt < 24; attempt++ ) {
 		await page.waitForTimeout( 500 );
 		const names = await listTools( page );
 		if ( names === null ) {
@@ -158,7 +158,7 @@ async function settledToolNames( page ) {
 		const serialized = JSON.stringify( names );
 		stableReads = serialized === previous ? stableReads + 1 : 0;
 		previous = serialized;
-		if ( stableReads >= 3 ) {
+		if ( stableReads >= 5 ) {
 			return names;
 		}
 	}
@@ -167,9 +167,19 @@ async function settledToolNames( page ) {
 }
 
 async function openAndInventory( page, pathname ) {
-	await page.goto( `${ WP_URL }${ pathname }`, {
+	const requestedUrl = new URL( pathname, `${ WP_URL }/` );
+	await page.goto( requestedUrl.href, {
 		waitUntil: 'domcontentloaded',
 	} );
+	const actualUrl = new URL( page.url() );
+	if (
+		actualUrl.origin !== requestedUrl.origin ||
+		actualUrl.pathname !== requestedUrl.pathname
+	) {
+		throw new Error(
+			`Expected ${ requestedUrl.href }, reached ${ actualUrl.href }.`
+		);
+	}
 	return settledToolNames( page );
 }
 

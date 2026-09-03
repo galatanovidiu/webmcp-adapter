@@ -49,7 +49,11 @@ const FLAGS = ['--enable-features=WebMCP,WebMCPTesting,DevToolsWebMCPSupport'];
 const cliArgs = process.argv.slice(2);
 const anonymous = cliArgs.includes('--anonymous');
 const urlOptionIndex = cliArgs.indexOf('--url');
-if (urlOptionIndex !== -1 && !cliArgs[urlOptionIndex + 1]) {
+if (
+	urlOptionIndex !== -1 &&
+	( !cliArgs[urlOptionIndex + 1] ||
+		cliArgs[urlOptionIndex + 1].startsWith('--') )
+) {
 	console.error('--url needs an absolute URL or a WordPress-relative path.');
 	process.exit(1);
 }
