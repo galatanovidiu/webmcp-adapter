@@ -53,7 +53,10 @@ registerAbility( {
 		},
 		additionalProperties: false,
 	},
-	meta: { annotations: { readonly: false, clientRegistered: true } },
+	meta: {
+		annotations: { readonly: false, clientRegistered: true },
+		webmcp: { risk: 'reversible' },
+	},
 	callback: async ( { clientId, clientIds, toRootClientId, index } = {} ) => {
 		const ctx = getEditor();
 		if ( ! ctx ) {
@@ -69,7 +72,9 @@ registerAbility( {
 			return { moved: false, reason: 'Provide clientId or clientIds.' };
 		}
 
-		const unknown = ids.filter( ( id ) => ! ctx.blockEditor.getBlock( id ) );
+		const unknown = ids.filter(
+			( id ) => ! ctx.blockEditor.getBlock( id )
+		);
 		if ( unknown.length ) {
 			return {
 				moved: false,
@@ -87,7 +92,8 @@ registerAbility( {
 		if ( strays.length ) {
 			return {
 				moved: false,
-				reason: 'clientIds must be siblings (same parent). Different parent: ' +
+				reason:
+					'clientIds must be siblings (same parent). Different parent: ' +
 					strays.join( ', ' ),
 			};
 		}

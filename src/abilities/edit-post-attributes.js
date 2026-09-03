@@ -95,7 +95,10 @@ registerAbility( {
 		},
 		additionalProperties: false,
 	},
-	meta: { annotations: { readonly: false, clientRegistered: true } },
+	meta: {
+		annotations: { readonly: false, clientRegistered: true },
+		webmcp: { risk: 'reversible' },
+	},
 	callback: async ( params = {} ) => {
 		const ctx = getEditor();
 		if ( ! ctx ) {
@@ -136,7 +139,8 @@ registerAbility( {
 			if ( bad.length ) {
 				return {
 					updated: false,
-					reason: 'Invalid taxonomies key(s): ' +
+					reason:
+						'Invalid taxonomies key(s): ' +
 						bad.join( ', ' ) +
 						'. Keys must be taxonomy rest_base names with term-ID arrays.',
 				};

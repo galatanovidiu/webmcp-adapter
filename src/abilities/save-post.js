@@ -49,6 +49,7 @@ registerAbility( {
 			destructive: true,
 			clientRegistered: true,
 		},
+		webmcp: { risk: 'consequential' },
 	},
 	callback: async ( { status } = {} ) => {
 		const ctx = getEditor();

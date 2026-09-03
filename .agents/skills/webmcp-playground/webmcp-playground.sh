@@ -188,8 +188,8 @@ cmd_test() {
 	EXPECTED_COUNT="$expected" node -e '
 		const fs = require("fs");
 		const actual = JSON.parse(fs.readFileSync(0, "utf8")).sort();
-		const reads = ["webmcp-editor-context","webmcp-get-theme-design-tokens","webmcp-list-block-types","webmcp-list-patterns","webmcp-list-templates","webmcp-navigate","webmcp-read-blocks"];
-		const writes = ["webmcp-edit-post-attributes","webmcp-insert-blocks","webmcp-insert-pattern","webmcp-move-blocks","webmcp-remove-blocks","webmcp-replace-blocks","webmcp-undo","webmcp-update-block-attributes"];
+		const reads = ["webmcp.editor-context","webmcp.get-theme-design-tokens","webmcp.list-block-types","webmcp.list-patterns","webmcp.list-templates","webmcp.navigate","webmcp.read-blocks"];
+		const writes = ["webmcp.edit-post-attributes","webmcp.insert-blocks","webmcp.insert-pattern","webmcp.move-blocks","webmcp.remove-blocks","webmcp.replace-blocks","webmcp.undo","webmcp.update-block-attributes"];
 		const expected = (Number(process.env.EXPECTED_COUNT) === 15 ? [...reads, ...writes] : reads).sort();
 		if (JSON.stringify(actual) !== JSON.stringify(expected)) {
 			console.error(`Expected ${expected.length} exact frontend tools, received ${actual.length}: ${actual.join(", ")}`);
@@ -197,8 +197,8 @@ cmd_test() {
 		}
 	' <<< "$names"
 	note "Registered exact frontend tool set: $expected"
-	note "Executing a read tool (webmcp-editor-context)…"
-	run_driver call webmcp-editor-context '{}'
+	note "Executing a read tool (webmcp.editor-context)…"
+	run_driver call webmcp.editor-context '{}'
 	note "Smoke test passed. Playground stays up at $WP_URL — run '$0 down' to stop."
 }
 

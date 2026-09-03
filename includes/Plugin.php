@@ -26,6 +26,27 @@ final class Plugin
 	private const MODULE_HANDLE = 'webmcp-adapter/adapter';
 
 	/**
+	 * Script module handle for pure adapter contract helpers.
+	 *
+	 * @var string
+	 */
+	private const ADAPTER_CONTRACT_MODULE_HANDLE = 'webmcp-adapter/adapter-contract';
+
+	/**
+	 * Script module handle for Ability registration lifecycle synchronization.
+	 *
+	 * @var string
+	 */
+	private const ABILITY_SYNCHRONIZER_MODULE_HANDLE = 'webmcp-adapter/ability-synchronizer';
+
+	/**
+	 * Script module handle for the legacy all-admin editor provider.
+	 *
+	 * @var string
+	 */
+	private const EDITOR_PROVIDER_MODULE_HANDLE = 'webmcp-adapter/editor-provider';
+
+	/**
 	 * Registers WordPress hooks.
 	 *
 	 * @return void
@@ -78,12 +99,37 @@ final class Plugin
 		}
 
 		wp_register_script_module(
-			self::MODULE_HANDLE,
-			WEBMCP_ADAPTER_URL . 'src/adapter.js',
+			self::ADAPTER_CONTRACT_MODULE_HANDLE,
+			WEBMCP_ADAPTER_URL . 'src/adapter-contract.js',
+			[],
+			WEBMCP_ADAPTER_VERSION
+		);
+
+		wp_register_script_module(
+			self::ABILITY_SYNCHRONIZER_MODULE_HANDLE,
+			WEBMCP_ADAPTER_URL . 'src/ability-synchronizer.js',
+			[self::ADAPTER_CONTRACT_MODULE_HANDLE],
+			WEBMCP_ADAPTER_VERSION
+		);
+
+		wp_register_script_module(
+			self::EDITOR_PROVIDER_MODULE_HANDLE,
+			WEBMCP_ADAPTER_URL . 'src/abilities/index.js',
 			['@wordpress/abilities'],
 			WEBMCP_ADAPTER_VERSION
 		);
 
+		wp_register_script_module(
+			self::MODULE_HANDLE,
+			WEBMCP_ADAPTER_URL . 'src/adapter.js',
+			[
+				'@wordpress/abilities',
+				self::ABILITY_SYNCHRONIZER_MODULE_HANDLE,
+			],
+			WEBMCP_ADAPTER_VERSION
+		);
+
+		wp_enqueue_script_module(self::EDITOR_PROVIDER_MODULE_HANDLE);
 		wp_enqueue_script_module(self::MODULE_HANDLE);
 	}
 

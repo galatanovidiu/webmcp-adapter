@@ -47,11 +47,13 @@ registerAbility( {
 						},
 						attributes: {
 							type: 'object',
-							description: 'Native Gutenberg attributes for this block.',
+							description:
+								'Native Gutenberg attributes for this block.',
 						},
 						innerBlocks: {
 							type: 'array',
-							description: 'Child nodes (same {name, attributes, innerBlocks} shape).',
+							description:
+								'Child nodes (same {name, attributes, innerBlocks} shape).',
 						},
 					},
 					required: [ 'name' ],
@@ -59,26 +61,34 @@ registerAbility( {
 			},
 			rootClientId: {
 				type: 'string',
-				description: 'Insert inside this block. Omit for the top level.',
+				description:
+					'Insert inside this block. Omit for the top level.',
 			},
 			index: {
 				type: 'integer',
 				minimum: 0,
-				description: 'Position in the target list. Omit to append; 0 to prepend.',
+				description:
+					'Position in the target list. Omit to append; 0 to prepend.',
 			},
 		},
 		required: [ 'blocks' ],
 		additionalProperties: false,
 	},
 	// readonly omitted (a write) → hidden unless webmcp_enable_write_tools is on.
-	meta: { annotations: { readonly: false, clientRegistered: true } },
+	meta: {
+		annotations: { readonly: false, clientRegistered: true },
+		webmcp: { risk: 'reversible' },
+	},
 	callback: async ( { blocks, rootClientId, index } = {} ) => {
 		const ctx = getEditor();
 		if ( ! ctx ) {
 			return { inserted: false, reason: NOT_IN_EDITOR };
 		}
 		if ( ! Array.isArray( blocks ) || blocks.length === 0 ) {
-			return { inserted: false, reason: 'Provide a non-empty blocks array.' };
+			return {
+				inserted: false,
+				reason: 'Provide a non-empty blocks array.',
+			};
 		}
 
 		// Validate every block name up front so a typo fails clearly instead of
@@ -92,7 +102,8 @@ registerAbility( {
 		const tree = snapshotTree( built );
 
 		const root = rootClientId || '';
-		const at = index != null ? index : ctx.blockEditor.getBlockCount( root );
+		const at =
+			index != null ? index : ctx.blockEditor.getBlockCount( root );
 		// updateSelection:false — do not steal focus during scripted composition.
 		await ctx.data
 			.dispatch( 'core/block-editor' )
@@ -103,8 +114,7 @@ registerAbility( {
 		if ( ! ctx.blockEditor.getBlock( built[ 0 ].clientId ) ) {
 			return {
 				inserted: false,
-				reason:
-					'The target rejected the blocks (allowedBlocks or templateLock).',
+				reason: 'The target rejected the blocks (allowedBlocks or templateLock).',
 			};
 		}
 

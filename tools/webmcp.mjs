@@ -179,8 +179,8 @@ async function detectInputMode(cdp) {
     if (typeof document.modelContext?.executeTool !== 'function') return 'legacy';
     if (window.__webmcpInputMode) return window.__webmcpInputMode;
     const probe = (await document.modelContext.getTools())
-      .find((tool) => tool.window === window && tool.name === 'webmcp-editor-context');
-    if (!probe) throw new Error('The frontend read probe webmcp-editor-context is unavailable.');
+      .find((tool) => tool.window === window && tool.name === 'webmcp.editor-context');
+    if (!probe) throw new Error('The frontend read probe webmcp.editor-context is unavailable.');
     try {
       await document.modelContext.executeTool(probe, {});
       return (window.__webmcpInputMode = 'object');
@@ -378,7 +378,7 @@ async function cmdCall(name, argsRef) {
 // Run a list of [{name, args}] in ONE CDP session — no per-call process/connect
 // overhead. args may be a JSON object (from the file) or a JSON string. Runs
 // sequentially, capturing each call's {result}/{error}; never early-exits. For
-// SAME-PAGE sequences (a page build) — do not put webmcp-navigate mid-batch, it
+// SAME-PAGE sequences (a page build) — do not put webmcp.navigate mid-batch, it
 // reloads the page and drops the tools.
 async function cmdBatch(specRef) {
   const calls = JSON.parse(readArgs(specRef || '-'));

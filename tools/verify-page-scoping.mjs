@@ -48,28 +48,28 @@ const FLAGS = [
 const expectedMode = readExpectedMode();
 
 const CURRENT_READ_NAMES = [
-	'webmcp-editor-context',
-	'webmcp-get-theme-design-tokens',
-	'webmcp-list-block-types',
-	'webmcp-list-patterns',
-	'webmcp-list-templates',
-	'webmcp-navigate',
-	'webmcp-read-blocks',
+	'webmcp.editor-context',
+	'webmcp.get-theme-design-tokens',
+	'webmcp.list-block-types',
+	'webmcp.list-patterns',
+	'webmcp.list-templates',
+	'webmcp.navigate',
+	'webmcp.read-blocks',
 ].sort();
 const CURRENT_WRITE_NAMES = [
 	...CURRENT_READ_NAMES,
-	'webmcp-edit-post-attributes',
-	'webmcp-insert-blocks',
-	'webmcp-insert-pattern',
-	'webmcp-move-blocks',
-	'webmcp-remove-blocks',
-	'webmcp-replace-blocks',
-	'webmcp-undo',
-	'webmcp-update-block-attributes',
+	'webmcp.edit-post-attributes',
+	'webmcp.insert-blocks',
+	'webmcp.insert-pattern',
+	'webmcp.move-blocks',
+	'webmcp.remove-blocks',
+	'webmcp.replace-blocks',
+	'webmcp.undo',
+	'webmcp.update-block-attributes',
 ].sort();
 const CURRENT_COMPLETE_NAMES = [
 	...CURRENT_WRITE_NAMES,
-	'webmcp-save-post',
+	'webmcp.save-post',
 ].sort();
 
 const ADMIN_BASE_NAMES = [

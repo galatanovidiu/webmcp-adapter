@@ -58,7 +58,7 @@ The server stays up afterward so you can keep poking.
 Example:
 
 ```bash
-.agents/skills/webmcp-playground/webmcp-playground.sh call webmcp-editor-context '{}'
+.agents/skills/webmcp-playground/webmcp-playground.sh call webmcp.editor-context '{}'
 ```
 
 ## Options (env)
@@ -105,5 +105,3 @@ Playground is fully ephemeral — its SQLite database lives only in a temp dir a
 - The tool count depends on the gates: reads always show; writes require
   `ENABLE_WRITES=1` (or the UI toggle); `save-post` also requires the destructive
   setting.
-- See [.hyper/memory/webmcp-playground-testing.md](../../../.hyper/memory/webmcp-playground-testing.md)
-  for the underlying findings (WP 7.0 is a real release, dbDelta works on SQLite, etc.).

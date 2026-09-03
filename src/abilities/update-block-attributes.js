@@ -115,8 +115,17 @@ registerAbility( {
 		},
 		additionalProperties: false,
 	},
-	meta: { annotations: { readonly: false, clientRegistered: true } },
-	callback: async ( { clientId, clientIds, attributes, updates, unset } = {} ) => {
+	meta: {
+		annotations: { readonly: false, clientRegistered: true },
+		webmcp: { risk: 'reversible' },
+	},
+	callback: async ( {
+		clientId,
+		clientIds,
+		attributes,
+		updates,
+		unset,
+	} = {} ) => {
 		const ctx = getEditor();
 		if ( ! ctx ) {
 			return { updated: false, reason: NOT_IN_EDITOR };
@@ -180,7 +189,9 @@ registerAbility( {
 		if ( unknown.length ) {
 			return {
 				updated: false,
-				reason: 'Unknown clientId(s): ' + [ ...new Set( unknown ) ].join( ', ' ),
+				reason:
+					'Unknown clientId(s): ' +
+					[ ...new Set( unknown ) ].join( ', ' ),
 			};
 		}
 

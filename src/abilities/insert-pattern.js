@@ -44,18 +44,23 @@ registerAbility( {
 			},
 			rootClientId: {
 				type: 'string',
-				description: 'Insert inside this block. Omit for the top level.',
+				description:
+					'Insert inside this block. Omit for the top level.',
 			},
 			index: {
 				type: 'integer',
 				minimum: 0,
-				description: 'Position in the target list. Omit to append; 0 to prepend.',
+				description:
+					'Position in the target list. Omit to append; 0 to prepend.',
 			},
 		},
 		required: [ 'name' ],
 		additionalProperties: false,
 	},
-	meta: { annotations: { readonly: false, clientRegistered: true } },
+	meta: {
+		annotations: { readonly: false, clientRegistered: true },
+		webmcp: { risk: 'reversible' },
+	},
 	callback: async ( { name, rootClientId, index } = {} ) => {
 		const ctx = getEditor();
 		if ( ! ctx ) {
@@ -67,12 +72,16 @@ registerAbility( {
 
 		let patterns;
 		try {
-			patterns = await ctx.data.resolveSelect( 'core' ).getBlockPatterns();
+			patterns = await ctx.data
+				.resolveSelect( 'core' )
+				.getBlockPatterns();
 		} catch {
 			return { inserted: false, reason: 'Could not load patterns.' };
 		}
 
-		const pattern = ( patterns ?? [] ).find( ( entry ) => entry.name === name );
+		const pattern = ( patterns ?? [] ).find(
+			( entry ) => entry.name === name
+		);
 		if ( ! pattern ) {
 			return { inserted: false, reason: 'Pattern not found: ' + name };
 		}
@@ -84,7 +93,8 @@ registerAbility( {
 		}
 
 		const root = rootClientId || '';
-		const at = index != null ? index : ctx.blockEditor.getBlockCount( root );
+		const at =
+			index != null ? index : ctx.blockEditor.getBlockCount( root );
 		await ctx.data
 			.dispatch( 'core/block-editor' )
 			.insertBlocks( parsed, at, root, false );
@@ -92,8 +102,7 @@ registerAbility( {
 		if ( ! ctx.blockEditor.getBlock( parsed[ 0 ].clientId ) ) {
 			return {
 				inserted: false,
-				reason:
-					'The target rejected the pattern (allowedBlocks or templateLock).',
+				reason: 'The target rejected the pattern (allowedBlocks or templateLock).',
 			};
 		}
 

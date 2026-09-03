@@ -2,9 +2,9 @@
  * Frontend abilities — registration barrel.
  *
  * Each import registers one client-side ability into the Abilities client store as
- * a side effect. The adapter imports this file once; the store subscription then
- * turns each into a WebMCP tool. Add a frontend ability by dropping a file in this
- * directory and importing it here — adapter.js does not change.
+ * a side effect. WordPress loads this provider separately from the adapter; the
+ * adapter's store subscription then turns each eligible record into a WebMCP tool.
+ * Add an editor ability by importing it here; adapter.js remains provider-neutral.
  *
  * @package WebmcpAdapter
  */
