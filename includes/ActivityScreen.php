@@ -13,8 +13,9 @@ if (!defined('ABSPATH')) {
  *
  * Adds a read-only page under Tools that reads from {@see ActivityRepository}.
  * The sessions view lists one row per run (run id, owner, action count, first
- * and last activity); the detail view lists the recorded actions for one run
- * (time, ability, outcome, screen, params). All output is escaped at the point
+	* and last activity); the detail view lists normalized Batch 7 events and
+	* labels additive-migration legacy rows explicitly. All output is escaped at
+	* the point
  * of rendering and the page is guarded by the `manage_options` capability.
  *
  * @since 0.8.0
@@ -126,31 +127,50 @@ final class ActivityScreen
 		echo '<table class="wp-list-table widefat fixed striped">';
 		echo '<thead><tr>';
 		echo '<th>' . esc_html__('Time', 'webmcp-adapter') . '</th>';
-		echo '<th>' . esc_html__('Ability', 'webmcp-adapter') . '</th>';
+		echo '<th>' . esc_html__('Tool', 'webmcp-adapter') . '</th>';
+		echo '<th>' . esc_html__('Provider / risk', 'webmcp-adapter') . '</th>';
 		echo '<th>' . esc_html__('Outcome', 'webmcp-adapter') . '</th>';
-		echo '<th>' . esc_html__('Screen', 'webmcp-adapter') . '</th>';
-		echo '<th>' . esc_html__('Params', 'webmcp-adapter') . '</th>';
+		echo '<th>' . esc_html__('Page', 'webmcp-adapter') . '</th>';
+		echo '<th>' . esc_html__('Safe summary', 'webmcp-adapter') . '</th>';
 		echo '</tr></thead>';
 		echo '<tbody>';
 
 		foreach ($rows as $row) {
-			$screen_url = isset($row['screen_url']) ? (string) $row['screen_url'] : '';
+			$legacy = empty($row['event_id']);
+			$time = $legacy
+				? (string) ($row['created'] ?? '')
+				: (string) ($row['recorded_at_gmt'] ?? '');
+			$tool = $legacy
+				? (string) ($row['ability'] ?? '')
+				: (string) ($row['tool_name'] ?? '');
+			$page = $legacy
+				? (string) ($row['screen_url'] ?? '')
+				: trim(
+					(string) ($row['surface'] ?? '') . ' · ' .
+					(string) ($row['page_context'] ?? '') . ' · ' .
+					(string) ($row['page_path'] ?? ''),
+					" ·"
+				);
+			$summary = $legacy ? ($row['params'] ?? null) : ($row['safe_summary'] ?? null);
 
 			echo '<tr>';
-			echo '<td>' . esc_html((string) ($row['created'] ?? '')) . '</td>';
-			echo '<td>' . esc_html((string) ($row['ability'] ?? '')) . '</td>';
-			echo '<td>' . esc_html((string) ($row['outcome'] ?? '')) . '</td>';
-
-			if ('' !== $screen_url) {
-				printf(
-					'<td><a href="%1$s" target="_blank" rel="noopener noreferrer">%1$s</a></td>',
-					esc_url($screen_url)
-				);
-			} else {
-				echo '<td>&mdash;</td>';
+			echo '<td>' . esc_html($time) . ($legacy ? '<br><small>' . esc_html__('Legacy local time', 'webmcp-adapter') . '</small>' : ' UTC') . '</td>';
+			echo '<td><code>' . esc_html($tool) . '</code>';
+			if ($legacy) {
+				echo '<br><small>' . esc_html__('Legacy row', 'webmcp-adapter') . '</small>';
 			}
-
-			echo '<td><pre>' . esc_html($this->formatParams($row['params'] ?? null)) . '</pre></td>';
+			echo '</td>';
+			echo '<td>' . esc_html((string) ($row['provider'] ?? '')) . '<br><code>' . esc_html((string) ($row['risk'] ?? '')) . '</code></td>';
+			echo '<td><strong>' . esc_html((string) ($row['outcome'] ?? '')) . '</strong>';
+			if (!$legacy) {
+				echo '<br><small>' . (int) ($row['duration_ms'] ?? 0) . ' ms · ' . esc_html((string) ($row['confirmation_outcome'] ?? '')) . '</small>';
+				if (!empty($row['error_code'])) {
+					echo '<br><code>' . esc_html((string) $row['error_code']) . '</code>';
+				}
+			}
+			echo '</td>';
+			echo '<td>' . ('' === $page ? '&mdash;' : esc_html($page)) . '</td>';
+			echo '<td><pre>' . esc_html($this->formatJson($summary)) . '</pre></td>';
 			echo '</tr>';
 		}
 
@@ -185,8 +205,13 @@ final class ActivityScreen
 		foreach ($sessions as $session) {
 			$run_id  = $session['run_id'];
 			$user_id = $session['user_id'];
-			$user    = get_userdata($user_id);
-			$owner   = $user ? $user->display_name : ('#' . $user_id);
+			$user    = $user_id > 0 ? get_userdata($user_id) : false;
+			$actor_hash = (string) ($session['actor_hash'] ?? '');
+			$owner = $user
+				? $user->display_name
+				: ('' !== $actor_hash
+					? __('Anonymous', 'webmcp-adapter') . ' ' . substr($actor_hash, 0, 8)
+					: __('Legacy / unknown', 'webmcp-adapter'));
 			$link    = admin_url('tools.php?page=' . self::PAGE . '&run=' . rawurlencode($run_id));
 
 			echo '<tr>';
@@ -206,16 +231,16 @@ final class ActivityScreen
 	}
 
 	/**
-	 * Formats stored JSON params for display.
+	 * Formats a stored JSON value for display.
 	 *
-	 * The params column stores a JSON string. Decode it and re-encode pretty so
-	 * the detail view is readable. When the value is not valid JSON, return the
-	 * raw string unchanged (still escaped by the caller).
+	 * Legacy parameters and normalized safe summaries are stored as JSON strings.
+	 * Decode and re-encode them so the detail view is readable. When the value is
+	 * not valid JSON, return the raw string unchanged (still escaped by the caller).
 	 *
 	 * @param mixed $params The stored params value.
 	 * @return string The display string.
 	 */
-	private function formatParams($params): string
+	private function formatJson($params): string
 	{
 		$raw = (string) ($params ?? '');
 
