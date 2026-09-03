@@ -18,9 +18,14 @@ import {
 import { createAbilitySynchronizer } from 'webmcp-adapter/ability-synchronizer';
 import {
 	classifyAbilityRisk,
+	requiresConfirmationForRisk,
 	toWebMcpToolName,
 } from 'webmcp-adapter/adapter-contract';
-import { confirmDestructive, throwIfAborted } from './confirmation.js';
+import { createActivityPresenter } from 'webmcp-adapter/activity';
+import {
+	confirmRiskyAction,
+	throwIfAborted,
+} from 'webmcp-adapter/confirmation';
 
 // `navigator.modelContext` is the live API in Chrome 149; `document.modelContext`
 // replaces it in Chrome 150. Prefer document, fall back to navigator.
@@ -69,11 +74,18 @@ const RUN_ID = ( () => {
 	}
 } )();
 
-// Prefixed to a destructive tool's description. WebMCP has no agent-consumed
-// "destructive" hint, so the description tells the agent what to expect: running
-// the tool pops an in-page confirmation the supervising user can approve first.
-const DESTRUCTIVE_NOTICE =
-	'⚠ PERSISTENT and consequential. Running this tool asks the user to confirm in the page before it proceeds; they may decline. ';
+const CONFIRMATION_NOTICE =
+	'⚠ This action requires in-page confirmation before it proceeds; the supervising user may decline. ';
+
+// Mount on every eligible document, even when WebMCP is unavailable. Presentation
+// is isolated and optional: a UI failure must never prevent tool registration.
+const activity = createActivityPresenter();
+try {
+	activity.mount();
+	hydrateActivityLog();
+} catch {
+	// Activity is presentation-only.
+}
 
 if ( modelContext && typeof modelContext.registerTool === 'function' ) {
 	const synchronizer = createAbilitySynchronizer( {
@@ -86,10 +98,6 @@ if ( modelContext && typeof modelContext.registerTool === 'function' ) {
 		toWebMcpToolName,
 	} );
 	void synchronizer.start();
-	// Hydrate the panel with this run's prior activity ONCE here, at adapter init —
-	// not on the store subscribe tick — so server history and live entries never
-	// double-render.
-	hydrateActivityLog();
 }
 
 /**
@@ -178,14 +186,13 @@ function resolveScreenLink( abilityName, params = {} ) {
  * @param {AbortSignal} registration.signal Signal that removes this registration.
  * @return {Promise<void>|void} Registration completion when the API is asynchronous.
  */
-function registerAbilityAsTool( ability, { toolName, signal } ) {
+function registerAbilityAsTool( ability, { toolName, risk, signal } ) {
 	const annotations = ability.meta?.annotations ?? {};
 	const baseDescription =
 		ability.description ?? ability.label ?? ability.name;
-	const description =
-		annotations.destructive === true
-			? DESTRUCTIVE_NOTICE + baseDescription
-			: baseDescription;
+	const description = requiresConfirmationForRisk( risk )
+		? CONFIRMATION_NOTICE + baseDescription
+		: baseDescription;
 
 	return modelContext.registerTool(
 		{
@@ -200,61 +207,59 @@ function registerAbilityAsTool( ability, { toolName, signal } ) {
 			},
 			execute: async ( params, context = {} ) => {
 				const invocationSignal = context?.signal;
-				throwIfAborted( invocationSignal );
-
-				// Destructive tools require an in-page trusted confirmation before they
-				// run. WebMCP has no built-in confirmation and the agent has no
-				// "destructive" hint it consumes, so this is the project's enforcement
-				// point: the user supervising the page can approve. Declining returns
-				// a structured cancellation (not an error) so the agent knows the action
-				// was refused, not that it failed.
-				if ( annotations.destructive === true ) {
-					const decision = await confirmDestructive(
-						ability,
-						params ?? {},
-						invocationSignal
-					);
-
-					if ( ! decision.approved ) {
-						const expired = decision.reason === 'expired';
-						logActivity( {
-							ability,
-							params: params ?? {},
-							outcome: expired ? 'expired' : 'declined',
-						} );
-
-						return {
-							cancelled: true,
-							reason: expired
-								? 'The confirmation expired before approval.'
-								: 'The user declined this destructive action in the page.',
-						};
-					}
-				}
-
-				// The invocation may have been cancelled while the confirmation was
-				// visible. Never let a late click execute an already-cancelled action.
-				throwIfAborted( invocationSignal );
-
-				let result;
+				const invocation = startActivity( ability, params ?? {} );
 				try {
-					result = await executeAbility( ability.name, params ?? {} );
-				} catch ( error ) {
-					logActivity( {
+					throwIfAborted( invocationSignal );
+
+					if ( requiresConfirmationForRisk( risk ) ) {
+						const decision = await confirmRiskyAction(
+							ability,
+							params ?? {},
+							{
+								risk,
+								signal: invocationSignal,
+								pageContext: currentPageContext(),
+							}
+						);
+
+						if ( ! decision.approved ) {
+							const expired = decision.reason === 'expired';
+							finishActivity( invocation, {
+								ability,
+								params: params ?? {},
+								outcome: expired ? 'expired' : 'declined',
+							} );
+							return {
+								cancelled: true,
+								reason: expired
+									? 'The confirmation expired before approval.'
+									: `The user declined this ${ risk } action in the page.`,
+							};
+						}
+					}
+
+					throwIfAborted( invocationSignal );
+					const result = await executeAbility(
+						ability.name,
+						params ?? {}
+					);
+					finishActivity( invocation, {
 						ability,
 						params: params ?? {},
-						outcome: 'failed',
+						outcome: 'ran',
 					} );
-					throw error; // never swallow the rejection
+					return result;
+				} catch ( error ) {
+					finishActivity( invocation, {
+						ability,
+						params: params ?? {},
+						outcome:
+							error?.name === 'AbortError'
+								? 'cancelled'
+								: 'failed',
+					} );
+					throw error;
 				}
-
-				logActivity( {
-					ability,
-					params: params ?? {},
-					outcome: 'ran',
-				} );
-
-				return result;
 			},
 		},
 		{ signal }
@@ -275,259 +280,79 @@ function reportBridgeDiagnostic( { code, message, error } ) {
 }
 
 /**
- * Mounts the Site tools activity log panel once and returns its list element.
+ * Adds the immediate running state. Presentation errors are always contained.
  *
- * Builds a fixed bottom-right panel (a convenience signal, NOT a native WP admin
- * notice and NOT an audit record): a header with the title, a collapse/expand
- * toggle, and a hidden "new activity" dot, plus a scrollable `role="log"` list with
- * `aria-live="polite"` so screen readers announce appended entries. Idempotent: when
- * the panel already exists it returns the existing list element. The z-index sits one
- * below the L6 confirmation modal (2147483647) so a confirmation still overlays it.
- *
- * This only mounts the container; {@link logActivity} appends entries.
- *
- * @return {HTMLElement} The list element entries are prepended to.
+ * @param {Object} ability Ability record.
+ * @param {Object} params Invocation arguments.
+ * @return {Object} Activity handle and resolved presentation data.
  */
-function mountActivityLog() {
-	const existing = document.getElementById( 'webmcp-activity-log' );
-	if ( existing ) {
-		return existing.querySelector( '[data-webmcp-log-list]' );
+function startActivity( ability, params ) {
+	const isWrite = ability.meta?.annotations?.readonly !== true;
+	const screenUrl = isWrite
+		? resolveScreenLink( ability.name, params )
+		: null;
+	let id = null;
+	try {
+		id = activity.start( {
+			label: ability.label ?? ability.name,
+			screenUrl,
+			isWrite,
+		} );
+	} catch {
+		// Activity is presentation-only.
 	}
-
-	const panel = document.createElement( 'section' );
-	panel.id = 'webmcp-activity-log';
-	panel.setAttribute(
-		'aria-label',
-		'ChatGPT Work and Codex Site tools activity'
-	);
-	panel.style.cssText =
-		'position:fixed;bottom:16px;right:16px;z-index:2147483646;width:320px;' +
-		'max-width:calc(100% - 32px);background:#fff;color:#1e1e1e;' +
-		'border:1px solid #c3c4c7;border-radius:8px;' +
-		'box-shadow:0 6px 24px rgba(0,0,0,0.18);' +
-		'font:13px/1.5 -apple-system,system-ui,sans-serif;overflow:hidden;';
-
-	const header = document.createElement( 'div' );
-	header.style.cssText =
-		'display:flex;align-items:center;gap:8px;padding:8px 12px;' +
-		'background:#1e1e1e;color:#fff;';
-
-	const title = document.createElement( 'span' );
-	title.id = 'webmcp-activity-log-title';
-	title.textContent = 'ChatGPT Work and Codex Site tools activity';
-	title.style.cssText = 'flex:1;font-weight:600;font-size:13px;';
-
-	// Hidden by default; revealed when a write/destructive entry arrives collapsed.
-	const dot = document.createElement( 'span' );
-	dot.setAttribute( 'data-webmcp-log-dot', '' );
-	dot.setAttribute( 'aria-hidden', 'true' );
-	dot.style.cssText =
-		'display:none;width:8px;height:8px;border-radius:50%;background:#d63638;';
-
-	const toggle = document.createElement( 'button' );
-	toggle.type = 'button';
-	toggle.setAttribute( 'data-webmcp-log-toggle', '' );
-	toggle.setAttribute( 'aria-expanded', 'true' );
-	toggle.setAttribute( 'aria-controls', 'webmcp-activity-log-list' );
-	toggle.textContent = 'Collapse';
-	toggle.style.cssText =
-		'padding:2px 8px;border-radius:4px;border:1px solid #757575;' +
-		'background:transparent;color:#fff;cursor:pointer;font:inherit;font-size:12px;';
-
-	const list = document.createElement( 'ol' );
-	list.id = 'webmcp-activity-log-list';
-	list.setAttribute( 'data-webmcp-log-list', '' );
-	list.setAttribute( 'role', 'log' );
-	list.setAttribute( 'aria-live', 'polite' );
-	list.setAttribute( 'aria-relevant', 'additions' );
-	list.style.cssText =
-		'margin:0;padding:0;list-style:none;max-height:320px;overflow-y:auto;';
-
-	toggle.addEventListener( 'click', () => {
-		const collapsed = toggle.getAttribute( 'aria-expanded' ) === 'false';
-		// Expand.
-		if ( collapsed ) {
-			list.style.display = '';
-			toggle.setAttribute( 'aria-expanded', 'true' );
-			toggle.textContent = 'Collapse';
-			// Expanding clears the unseen-activity cue.
-			dot.style.display = 'none';
-			return;
-		}
-		// Collapse.
-		list.style.display = 'none';
-		toggle.setAttribute( 'aria-expanded', 'false' );
-		toggle.textContent = 'Expand';
-	} );
-
-	header.append( title, dot, toggle );
-	panel.append( header, list );
-	( document.body ?? document.documentElement ).append( panel );
-
-	return list;
+	return { id, screenUrl };
 }
 
 /**
- * Builds one Site tools activity entry and adds it to the log list.
+ * Updates the visible entry and records the completed outcome through the legacy
+ * audit endpoint. Batch 7 owns the expanded backend outcome contract.
  *
- * Shared by live logging ({@link logActivity}) and server hydration
- * ({@link hydrateActivityLog}) so both render identical DOM. Each entry shows the
- * time, an "Agent" attribution marker, an outcome badge (ran / failed / declined / expired),
- * and the action label. When `screenUrl` is a non-empty string it appends an
- * "Open screen ↗" link to that URL; otherwise no link is rendered. Every supplied
- * value is rendered with `textContent`, never `innerHTML`, so untrusted values
- * cannot inject markup.
- *
- * @param {HTMLElement} list              The log list element to add the entry to.
- * @param {Object}      entry             The entry to render.
- * @param {string}      entry.label       The action label (textContent).
- * @param {string}      entry.outcome     One of `'ran'`, `'failed'`, `'declined'`, or `'expired'`.
- * @param {?string}     entry.screenUrl   The screen link URL, or null/empty for no link.
- * @param {string}      entry.timeText    The formatted time text (textContent).
- * @param {boolean}     entry.isWrite     True for a write/destructive entry (link-bearing).
- * @param {boolean}     entry.prepend     True to prepend (newest first), false to append.
- * @return {HTMLElement} The created `<li>` entry element.
- */
-function appendActivityEntry(
-	list,
-	{ label, outcome, screenUrl, timeText, isWrite, prepend }
-) {
-	const entry = document.createElement( 'li' );
-	entry.style.cssText =
-		'padding:8px 12px;border-top:1px solid #e0e0e0;' +
-		'display:flex;flex-direction:column;gap:2px;';
-
-	const meta = document.createElement( 'div' );
-	meta.style.cssText =
-		'display:flex;align-items:center;gap:6px;font-size:11px;color:#757575;';
-
-	const time = document.createElement( 'span' );
-	time.textContent = timeText;
-
-	const attribution = document.createElement( 'span' );
-	attribution.textContent = 'Agent';
-	attribution.style.cssText =
-		'padding:0 5px;border-radius:3px;background:#f0f0f1;color:#3c434a;';
-
-	const badge = document.createElement( 'span' );
-	const badgeStyles = {
-		ran: 'background:#edfaef;color:#00450c;',
-		failed: 'background:#fcf0f1;color:#8a1f11;',
-		declined: 'background:#fcf9e8;color:#674e00;',
-		expired: 'background:#f0f0f1;color:#50575e;',
-	};
-	badge.textContent = outcome;
-	badge.style.cssText =
-		'margin-left:auto;padding:0 6px;border-radius:3px;font-weight:600;' +
-		( badgeStyles[ outcome ] ?? 'background:#f0f0f1;color:#3c434a;' );
-
-	meta.append( time, attribution, badge );
-
-	const labelEl = document.createElement( 'div' );
-	labelEl.style.cssText = 'font-weight:600;word-break:break-word;';
-	labelEl.textContent = label;
-
-	entry.append( meta, labelEl );
-
-	// A non-empty screen url is the link signal: writes carry one, reads never do.
-	if ( isWrite && typeof screenUrl === 'string' && screenUrl !== '' ) {
-		const link = document.createElement( 'a' );
-		link.href = screenUrl;
-		link.textContent = 'Open screen ↗';
-		link.style.cssText = 'font-size:12px;color:#2271b1;';
-		entry.append( link );
-	}
-
-	if ( prepend ) {
-		list.prepend( entry );
-	} else {
-		list.append( entry );
-	}
-
-	return entry;
-}
-
-/**
- * Appends one Site tools activity entry to the log panel (newest first) and records it.
- *
- * Lazy-mounts the panel via {@link mountActivityLog} so it appears on the first
- * entry, not before, then renders the entry via {@link appendActivityEntry} (newest
- * first). For a write/destructive ability (`meta.annotations.readonly !== true`) it
- * resolves a same-origin screen link via {@link resolveScreenLink}; reads, and writes
- * with no resolvable link, render no link. A write/destructive entry appended while the
- * panel is collapsed reveals the header "new activity" dot.
- *
- * After rendering, it POSTs the action to the activity API (fire-and-forget): this is
- * audit-only and must NEVER affect the tool call. The POST is not awaited and a `.catch`
- * swallows any rejection, and the whole body is wrapped so a rendering error can never
- * propagate to the caller (the tool action and its result are unaffected).
- *
- * @param {Object} options         The entry to log.
- * @param {Object} options.ability The ability record (label/name/meta).
- * @param {Object} options.params  The action's arguments (for the screen link).
- * @param {string} options.outcome One of `'ran'`, `'failed'`, `'declined'`, or `'expired'`.
+ * @param {Object} invocation Activity handle.
+ * @param {Object} options Final activity data.
  * @return {void}
  */
-function logActivity( { ability, params, outcome } ) {
+function finishActivity( invocation, { ability, params, outcome } ) {
 	try {
-		const list = mountActivityLog();
-		const panel = document.getElementById( 'webmcp-activity-log' );
-		const toggle = panel?.querySelector( '[data-webmcp-log-toggle]' );
-		const collapsed = toggle?.getAttribute( 'aria-expanded' ) === 'false';
-
-		// Writes/destructive may carry a screen link; reads never do.
-		const isWrite = ability.meta?.annotations?.readonly !== true;
-		const screenUrl = isWrite
-			? resolveScreenLink( ability.name, params ?? {} )
-			: null;
-
-		appendActivityEntry( list, {
-			label: ability.label ?? ability.name,
-			outcome,
-			screenUrl,
-			timeText: new Date().toLocaleTimeString(),
-			isWrite,
-			prepend: true,
-		} );
-
-		// Reveal the unseen-activity cue only for writes/destructive arriving while
-		// collapsed; reads keep their salience low (per the design note).
-		if ( isWrite && collapsed ) {
-			const dot = panel?.querySelector( '[data-webmcp-log-dot]' );
-			if ( dot ) {
-				dot.style.display = 'inline-block';
-			}
-		}
-
-		// Static reveal honours reduced-motion: no animation is used, so nothing to gate.
-
-		// Record the action server-side (audit-only). Fire-and-forget: not awaited and
-		// the `.catch` swallows any rejection, so a recording failure can never surface
-		// to the caller or alter the tool action/result. The server fills user/session/
-		// created and redacts params; nonce is carried by wp.apiFetch.
-		if ( window.wp?.apiFetch ) {
-			const activityParams = redactSensitiveActivityParams(
-				ability,
-				params ?? {}
-			);
-			window.wp
-				.apiFetch( {
-					path: '/webmcp/v1/activity',
-					method: 'POST',
-					data: {
-						run_id: RUN_ID,
-						ability: ability.name,
-						outcome,
-						screen_url: screenUrl,
-						params: activityParams,
-					},
-				} )
-				.catch( () => {} );
-		}
+		activity.finish( invocation.id, outcome );
 	} catch {
-		// Logging is presentation-only: swallow rendering errors so they never reach
-		// the caller or alter the tool action/result.
+		// Activity is presentation-only.
 	}
+
+	// The existing endpoint does not yet accept cancellation or stale outcomes.
+	// Keep those visible in-tab without beginning the Batch 7 backend migration.
+	if (
+		! window.wp?.apiFetch ||
+		! [ 'ran', 'failed', 'declined', 'expired' ].includes( outcome )
+	) {
+		return;
+	}
+
+	try {
+		const activityParams = redactSensitiveActivityParams( ability, params );
+		window.wp
+			.apiFetch( {
+				path: '/webmcp/v1/activity',
+				method: 'POST',
+				data: {
+					run_id: RUN_ID,
+					ability: ability.name,
+					outcome,
+					screen_url: invocation.screenUrl,
+					params: activityParams,
+				},
+			} )
+			.catch( () => {} );
+	} catch {
+		// Audit-only recording must never alter the ability result.
+	}
+}
+
+function currentPageContext() {
+	const surface = document.body?.classList.contains( 'wp-admin' )
+		? 'WordPress admin'
+		: 'Site frontend';
+	return surface + ' · ' + window.location.pathname;
 }
 
 /**
@@ -563,9 +388,8 @@ function redactSensitiveActivityParams( ability, params ) {
  *
  * Called ONCE at adapter init (not on the store subscribe tick) so server history and
  * live entries never double-render. GETs the current run's recent rows (newest-first)
- * and, when there is at least one row, mounts the panel and renders each via
- * {@link appendActivityEntry} with `prepend: false` — server history renders newest-first
- * below any live entries. A row is treated as link-bearing when its `screen_url` is a
+ * and, when there is at least one row, passes each to the isolated presenter. A row
+ * is treated as link-bearing when its `screen_url` is a
  * non-empty string (only writes carry one server-side, so that presence is the correct
  * link signal). Hydrated labels use the slash ability name as-is; client-side label
  * resolution is not attempted (a minor cosmetic difference is acceptable).
@@ -592,19 +416,16 @@ function hydrateActivityLog() {
 				return;
 			}
 
-			const list = mountActivityLog();
-
 			for ( const row of rows ) {
 				const screenUrl =
 					typeof row.screen_url === 'string' ? row.screen_url : null;
 
-				appendActivityEntry( list, {
+				activity.appendHistory( {
 					label: row.ability,
 					outcome: row.outcome,
 					screenUrl,
 					timeText: new Date( row.created ).toLocaleTimeString(),
 					isWrite: screenUrl !== null && screenUrl !== '',
-					prepend: false,
 				} );
 			}
 		} )

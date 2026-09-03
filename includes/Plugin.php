@@ -39,6 +39,12 @@ final class Plugin
 	 */
 	private const ABILITY_SYNCHRONIZER_MODULE_HANDLE = 'webmcp-adapter/ability-synchronizer';
 
+	/** @var string Isolated in-tab activity presentation module. */
+	private const ACTIVITY_MODULE_HANDLE = 'webmcp-adapter/activity';
+
+	/** @var string Consequential and privileged confirmation module. */
+	private const CONFIRMATION_MODULE_HANDLE = 'webmcp-adapter/confirmation';
+
 	/**
 	 * Script module handle for the legacy all-admin editor provider.
 	 *
@@ -177,6 +183,20 @@ final class Plugin
 		);
 
 		wp_register_script_module(
+			self::ACTIVITY_MODULE_HANDLE,
+			WEBMCP_ADAPTER_URL . 'src/activity.js',
+			[],
+			WEBMCP_ADAPTER_VERSION
+		);
+
+		wp_register_script_module(
+			self::CONFIRMATION_MODULE_HANDLE,
+			WEBMCP_ADAPTER_URL . 'src/confirmation.js',
+			[],
+			WEBMCP_ADAPTER_VERSION
+		);
+
+		wp_register_script_module(
 			self::CATEGORY_MODULE_HANDLE,
 			WEBMCP_ADAPTER_URL . 'src/abilities/category.js',
 			['@wordpress/abilities'],
@@ -239,6 +259,8 @@ final class Plugin
 			[
 				'@wordpress/abilities',
 				self::ABILITY_SYNCHRONIZER_MODULE_HANDLE,
+				self::ACTIVITY_MODULE_HANDLE,
+				self::CONFIRMATION_MODULE_HANDLE,
 			],
 			WEBMCP_ADAPTER_VERSION
 		);
