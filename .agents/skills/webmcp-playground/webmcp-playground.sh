@@ -122,7 +122,7 @@ cmd_up() {
 		sleep 2
 		if [ "$i" = "120" ]; then die "Playground did not come up in time. See $LOG"; fi
 	done
-	note "Ready: $WP_URL  (admin / admin)"
+	note "Ready: $WP_URL  (admin / password)"
 	note "Settings: $WP_URL/wp-admin/options-general.php?page=webmcp-adapter"
 	[ "${ENABLE_WRITES:-0}" = "1" ] && note "Write tools: ENABLED for this run." || true
 }
@@ -161,7 +161,7 @@ cmd_status() {
 
 run_driver() {
 	ensure_playwright
-	WP_URL="$WP_URL" WP_USER=admin WP_PASS=admin HEADLESS="${HEADLESS:-1}" node "$DRIVER" "$@"
+	WP_URL="$WP_URL" WP_USER=admin WP_PASS=password HEADLESS="${HEADLESS:-1}" node "$DRIVER" "$@"
 }
 
 cmd_tools() { cmd_up; run_driver names; }
@@ -182,13 +182,14 @@ cmd_test() {
 	ensure_playwright
 	note "Listing tools…"
 	local names expected
-	names="$(run_driver names)"
-	expected=7
-	if [ "${ENABLE_WRITES:-0}" = "1" ] || [ "${ENABLE_WRITES:-}" = "true" ]; then expected=15; fi
+	names="$(run_driver names --url /wp-admin/post.php?post=1\&action=edit)"
+	expected=9
+	if [ "${ENABLE_WRITES:-0}" = "1" ] || [ "${ENABLE_WRITES:-}" = "true" ]; then expected=17; fi
 	EXPECTED_COUNT="$expected" node -e '
 		const fs = require("fs");
 		const actual = JSON.parse(fs.readFileSync(0, "utf8")).sort();
-		const reads = ["webmcp.editor-context","webmcp.get-theme-design-tokens","webmcp.list-block-types","webmcp.list-patterns","webmcp.list-templates","webmcp.navigate","webmcp.read-blocks"];
+		const base = ["webmcp.get-page-context","webmcp.list-admin-destinations"];
+		const reads = [...base,"webmcp.editor-context","webmcp.get-theme-design-tokens","webmcp.list-block-types","webmcp.list-patterns","webmcp.list-templates","webmcp.navigate","webmcp.read-blocks"];
 		const writes = ["webmcp.edit-post-attributes","webmcp.insert-blocks","webmcp.insert-pattern","webmcp.move-blocks","webmcp.remove-blocks","webmcp.replace-blocks","webmcp.undo","webmcp.update-block-attributes"];
 		const expected = (Number(process.env.EXPECTED_COUNT) === 15 ? [...reads, ...writes] : reads).sort();
 		if (JSON.stringify(actual) !== JSON.stringify(expected)) {
@@ -198,7 +199,7 @@ cmd_test() {
 	' <<< "$names"
 	note "Registered exact frontend tool set: $expected"
 	note "Executing a read tool (webmcp.editor-context)…"
-	run_driver call webmcp.editor-context '{}'
+	run_driver call webmcp.editor-context '{}' --url /wp-admin/post.php?post=1\&action=edit
 	note "Smoke test passed. Playground stays up at $WP_URL — run '$0 down' to stop."
 }
 
