@@ -56,7 +56,7 @@ final class ActivityRestController
 	 *
 	 * @var array<int,string>
 	 */
-	private const OUTCOMES = ['ran', 'failed', 'declined'];
+	private const OUTCOMES = ['ran', 'failed', 'declined', 'expired'];
 
 	/**
 	 * Activity store the controller reads from and writes to.

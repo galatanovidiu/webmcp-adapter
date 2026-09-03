@@ -1,9 +1,9 @@
 <?php
 /**
  * Plugin Name:       WebMCP Adapter
- * Plugin URI:        https://github.com/Automattic/wpwebmcp
- * Description:       Bridges the WordPress Abilities API to the browser WebMCP API (document.modelContext), exposing registered abilities as tools to in-browser AI agents.
- * Version:           0.14.0
+ * Plugin URI:        https://github.com/galatanovidiu/webmcp-adapter
+ * Description:       Exposes frontend WordPress editor abilities to browser AI agents through the WebMCP API (document.modelContext).
+ * Version:           0.15.0
  * Requires at least: 7.0
  * Requires PHP:      8.1
  * Author:            Automattic
@@ -22,7 +22,7 @@ if (!defined('ABSPATH')) {
 	exit;
 }
 
-define('WEBMCP_ADAPTER_VERSION', '0.14.0');
+define('WEBMCP_ADAPTER_VERSION', '0.15.0');
 define('WEBMCP_ADAPTER_DB_VERSION', '1');
 define('WEBMCP_ADAPTER_FILE', __FILE__);
 define('WEBMCP_ADAPTER_DIR', plugin_dir_path(__FILE__));

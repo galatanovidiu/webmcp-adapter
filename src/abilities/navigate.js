@@ -3,7 +3,7 @@
  *
  * A client-side WordPress ability — its `callback` runs in the browser, not on
  * the server — that moves the tab to another URL on this site. It registers into
- * the same Abilities client store as the server abilities, so the adapter turns it
+ * the Abilities client store, so the adapter turns it
  * into a WebMCP tool through its normal path (write gate, activity log, and the
  * confirmation modal all apply). This replaces the old direct `registerTool` hack,
  * which bypassed all of that.

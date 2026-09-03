@@ -1,183 +1,180 @@
 # WebMCP Adapter
 
 > **This is an experiment.** It is a proof of concept, not a production plugin. It
-> targets a draft browser API (WebMCP) that is still changing, and it exposes WordPress
-> administration to an in-browser AI agent. Run it only on a local or throwaway site.
-> Do not use it on a production WordPress install.
+> targets a draft browser API and exposes the open WordPress editor to an AI agent.
+> Run it only on a local or throwaway site.
 
-A WordPress plugin that bridges the WordPress core **Abilities API** to the browser's
-**WebMCP API** (`document.modelContext` / `navigator.modelContext`). It turns registered
-WordPress abilities into structured tools that an in-tab AI agent (for example, Chrome's
-built-in agent) can discover and call.
+A WordPress plugin that exposes frontend editor abilities through the imperative
+WebMCP API (`document.modelContext`). In the ChatGPT desktop app, Codex and ChatGPT
+Work can discover these actions as **Site tools** in the built-in browser and use
+them against the same live, signed-in editor the user sees.
 
-## Try it — drive it with Claude Code
+The adapter is intentionally frontend-only. It does not load or expose WordPress
+server abilities. This keeps the page catalog focused on live editor collaboration
+and avoids the locally reproduced failure where a 121-tool backend-heavy catalog
+made Codex reject the page configuration. OpenAI does not publish a numeric Site
+tools limit.
 
-WebMCP is still an origin-trial API (Chrome 149+, behind a flag). The only browser agent
-consuming it today is Gemini in Chrome, inside that trial — so for a normal browser there is
-nothing to *call* the tools this plugin registers out of the box. This repo ships a Claude
-Code skill, **`/webmcp-agent`**, that stands in for that missing client: it launches Chrome
-with the WebMCP flag, connects over the DevTools Protocol, discovers the registered tools,
-and calls them to do what you ask.
+## Try it in Codex
 
-You need [Claude Code](https://claude.com/claude-code), Chrome 149 or later, and Docker (for
-the local WordPress).
+You need WordPress 7.0+, Node 22+, the latest ChatGPT desktop app, and a Codex model
+with Site tools support (currently GPT-5.6 Sol or GPT-5.6 Terra). Docker is required
+only for the wp-env path below. In
+**Settings → Browser → Permissions**, keep **Enable site tools** on. Site tools are
+currently unavailable in Enterprise and Edu workspaces and may depend on rollout.
 
 ```bash
 git clone https://github.com/galatanovidiu/webmcp-adapter
 cd webmcp-adapter
-npx wp-env start   # local WordPress at http://localhost:8888 with this plugin AND the
-                   # abilities-catalog companion already active (requires Docker)
-claude             # open Claude Code in the repo
+npm ci
+npx wp-env start
 ```
 
-Then, inside Claude Code, run the skill:
+Then open
+`http://localhost:8888/wp-admin/post-new.php?post_type=page` in Codex's built-in
+browser and sign in with wp-env's default `admin` / `password` credentials. Ask
+Codex to inspect the open editor or its selected blocks. The seven read tools appear
+after page registration settles; editor writes stay off until enabled under
+**Settings → WebMCP**.
 
+For a no-Docker disposable environment, run:
+
+```bash
+.agents/skills/webmcp-playground/webmcp-playground.sh up
 ```
-/webmcp-agent                              # drive the local demo — it explains itself first
-/webmcp-agent create a page about coffee   # ...or just hand it a task
-/webmcp-agent https://your-site.com        # ...or point it at your own WordPress site
-```
 
-Claude Code logs in, waits for the tools to load, then drives them: reading site data and —
-when you enable writes — authoring pages live in the Gutenberg editor while you watch. No
-Docker? Use the bundled `webmcp-playground` skill instead (real-HTTP WordPress, no local
-install). Targeting your own site, `/webmcp-agent` walks you through installing both plugins
-and logging in first.
-
-> The skill is discovered through the `.claude/skills` symlink, which git recreates on clone
-> for macOS and Linux. On Windows, enable git symlinks (`git clone -c core.symlinks=true`).
+Open the reported Settings URL or
+`http://127.0.0.1:9400/wp-admin/post-new.php?post_type=page` in the built-in browser;
+the public site root does not enqueue admin tools. The repository also ships
+Playwright and raw-CDP drivers for deterministic regression testing in system Chrome;
+see [development.md](docs/development.md).
 
 ## What it does
 
-WordPress 7.0 ships the Abilities API in core: a single, machine-readable registry of
-site capabilities (`wp_register_ability()`). WebMCP is a proposed Chrome standard that
-lets a web page offer tools to a browser-side AI agent, scoped to the current tab.
+WordPress 7.0 provides the Abilities API client store. This plugin registers a
+focused `webmcp/*` frontend ability set in that store and projects only abilities
+marked `meta.annotations.clientRegistered`, while rejecting any record also marked
+`serverRegistered`.
 
-This plugin connects the two. On every wp-admin page it:
+On every top-level wp-admin page, the adapter:
 
-1. Reads the abilities the site has registered.
-2. Registers each one as a WebMCP tool.
-3. Lets the in-tab agent call those tools to read site data and (when explicitly enabled)
-   make changes.
+1. Registers its frontend abilities in the WordPress client store.
+2. Exposes the permitted frontend abilities through `document.modelContext.registerTool()`.
+3. Subscribes to the store for frontend abilities registered later.
+4. Executes calls against the live tab and open Gutenberg state.
 
-The result: an AI agent running inside the browser tab can answer questions about the
-site and perform admin actions through the same capabilities WordPress already exposes —
-without a separate server-side protocol.
+Server abilities marked `serverRegistered` are ignored even when another plugin
+loads them into the shared store. Use REST or a server-side MCP adapter for those
+operations.
 
-## How it works
-
-The layers, server to browser:
-
-| Layer | What it is |
-|---|---|
-| Abilities API (PHP, core) | The registry. Source of truth for site capabilities. |
-| REST `/wp-abilities/v1/` | Abilities over HTTP. |
-| `@wordpress/abilities` (JS, core) | Client store: `getAbilities`, `executeAbility`, `store`. |
-| `@wordpress/core-abilities` (JS, core) | Fetches server abilities over REST into the client store. |
-| **WebMCP Adapter (this plugin)** | Bridges the client store → WebMCP `modelContext`. |
-
-The adapter enqueues one script module on wp-admin pages
-([src/adapter.js](src/adapter.js)). It:
-
-1. Feature-detects `document.modelContext || navigator.modelContext`. Chrome 149 exposes
-   `navigator.modelContext`; `document.modelContext` lands in Chrome 150.
-2. Reads abilities from the client store and registers each as a WebMCP tool.
-3. **Subscribes** to the store and registers any ability it has not seen yet. (The store
-   loads asynchronously with no resolver, so `await getAbilities()` returns an empty cache
-   on first paint. Subscribing is the only correct pattern — this was the bug that made
-   the first version register zero tools.)
-
-Ability → WebMCP tool field mapping:
+Ability → WebMCP mapping:
 
 | Ability field | WebMCP tool field |
 |---|---|
-| `name` (`namespace/name`) | `name` (`namespace-name`, `/` is not allowed) |
-| `description` (fallback `label`) | `description` |
-| `input_schema` | `inputSchema` (JSON Schema, passes through as-is) |
+| `name` (`namespace/name`) | `name` (`namespace-name`) |
+| `label` | `title` |
+| `description` | `description` |
+| `input_schema` | `inputSchema` |
 | `meta.annotations.readonly` | `annotations.readOnlyHint` |
-| `executeAbility(name, params)` | `execute(params)` |
+| frontend callback | `execute(params, { signal })` |
+
+Every tool definition carries `untrustedContentHint: true` because editor and site data can
+contain user-authored text. Tool registration failures are reported without creating
+unhandled promise rejections. When a browser supplies the callback cancellation
+signal, cancellation also tears down a pending confirmation before an ability can
+run.
+
+## Frontend editor tools
+
+The tools operate on the open post editor or Site Editor through `window.wp.data`.
+Changes appear live in the editor. Non-destructive writes remain unsaved until the
+separately gated `save-post` tool runs.
+
+Read tools (7, always available):
+
+- `navigate`
+- `editor-context`
+- `read-blocks`
+- `list-block-types`
+- `get-theme-design-tokens`
+- `list-patterns`
+- `list-templates`
+
+Editor write tools (8, behind **Enable write tools**):
+
+- `insert-blocks`
+- `update-block-attributes`
+- `insert-pattern`
+- `remove-blocks`
+- `move-blocks`
+- `replace-blocks`
+- `edit-post-attributes`
+- `undo`
+
+Persistence tool (1, behind both **Enable write tools** and **Enable destructive
+tools**):
+
+- `save-post` — saves the staged editor state and can publish when explicitly asked.
+
+The editor set is block-agnostic. It works with the registered block types through
+the recursive `{ name, attributes, innerBlocks }` shape instead of adding one tool
+per block. See [architecture.md](docs/architecture.md) for the full contract.
 
 ## Safety model
 
-Exposing admin actions to an AI agent is dangerous by default, so writes are gated
-behind several layers. Read-only abilities always expose. Everything else is OFF until an
-administrator turns it on.
+- Read tools are always exposed.
+- Non-destructive editor writes are default-off.
+- `save-post` is behind a second default-off gate and an in-page confirmation.
+- The confirmation requires a trusted click by default. A separate clearly marked
+  demo option can relax this for automated testing.
+- An unanswered confirmation safely expires after 60 seconds.
+- When the browser forwards an invocation signal to the callback, cancellation
+  removes a pending confirmation and prevents a later click from running the action.
+- Frontend callbacks re-check the current editor state and validate their inputs
+  through the Abilities API before changing it.
 
-- **Three exposure settings** (all default OFF, `manage_options` only):
-  - `webmcp_enable_write_tools` — non-destructive writes.
-  - `webmcp_enable_destructive_tools` — destructive writes (require the write setting too).
-  - `webmcp_enable_dangerous_tools` — the dangerous tier (require all three settings).
-- **Per-ability dangerous opt-in.** Dangerous tools (plugin/theme install, update, delete,
-  option updates, privacy export) must each be individually opted in, on top of the three
-  settings.
-- **In-page confirmation.** Destructive and dangerous tool calls pop a confirmation modal
-  the human must approve. The accept click is gated on `event.isTrusted`, so the in-page
-  agent cannot synthetically self-approve. (A click injected over the Chrome DevTools
-  Protocol is trusted and out of scope — a CDP-controlled browser already owns the
-  session.)
-- **Capability is the hard guard.** Every ability still runs its WordPress
-  `permission_callback`. The settings and the modal are extra gates, not the authorization
-  boundary.
+The ChatGPT built-in browser performs its own safety review for Site tool calls. That
+product layer is separate from the plugin's exposure gates and confirmation modal.
 
 ## Activity log and review
 
-Every agent tool call — reads, writes, and the outcome (`ran` / `failed` / `declined`) —
-is logged two ways:
+Every completed, failed, declined, or expired tool call is shown in a collapsible
+in-page panel. Activity is also persisted
+to the plugin's custom table, with parameter redaction and bounded retention, and can
+be reviewed under **Tools → Agent activity**.
 
-- A persistent, collapsible **in-page panel** (bottom-right) shows recent actions live,
-  attributes each to the agent, and links writes to the relevant wp-admin screen.
-- Activity is **persisted server-side** in a custom table so it survives navigation. A
-  **Tools → Agent activity** admin screen lists past sessions and the actions in each run.
-  Parameters are redacted before storage and retention is capped.
+## Codex limitations
 
-## Frontend abilities: editing the block editor live
+Codex currently discovers only imperative tools registered from JavaScript in the
+top-level document. Declarative form tools and tools registered inside iframes are
+not available as Site tools. This plugin registers in the top-level wp-admin shell;
+the Site Editor's canvas may remain in an iframe.
 
-Most abilities come from the server (PHP → REST). The adapter also ships **client-side
-abilities** that act on the **open Gutenberg editor** through `window.wp.data`, so the agent's
-edits appear live and unsaved in the tab the user is watching — the user reviews, then undoes
-or saves. Rather than one tool per block (WordPress has ~109 core block types that all share
-the same `{ name, attributes, innerBlocks }` shape), it ships a small block-agnostic set:
-reads for discovery and orientation (`editor-context`, `read-blocks`, `list-block-types`,
-`get-theme-design-tokens`, `list-patterns`, `list-templates`) and writes that compose and
-restructure any layout (`insert-blocks`, `update-block-attributes`, `insert-pattern`,
-`remove-blocks`, `move-blocks`, `replace-blocks`, `edit-post-attributes`, `undo`). The writes
-are behind `webmcp_enable_write_tools` and stage unsaved editor edits only. The one
-persistence gate is `save-post` (optionally publishing), which is destructive-tier: it also
-needs the destructive setting and a human confirmation in the page. See
-[docs/architecture.md](docs/architecture.md) for the design.
+Tools are tab-bound and ephemeral. Navigating or reloading invalidates old handles,
+and the agent must discover the tools again on the new document.
 
 ## Requirements
 
-- WordPress 7.0 or later (for the Abilities API in core).
+- WordPress 7.0 or later.
 - PHP 8.1 or later.
-- A browser that exposes the WebMCP API (Chrome 149+ for `navigator.modelContext`).
-- **Recommended companion:** the [abilities-catalog](https://github.com/galatanovidiu/abilities-catalog)
-  plugin, which registers the core wp-admin ability set this adapter is built around. The dependency
-  is one-way and soft: this adapter exposes whatever abilities are registered, so it runs without the
-  catalog (only core abilities like `core/get-site-info` are then available), but the catalog is what
-  makes it useful. The catalog does not depend on this adapter.
+- Node.js 22 or later for local tooling.
+- A browser agent that supports the imperative WebMCP API.
+
+For Codex, use the built-in browser in the latest ChatGPT desktop app. Public sites
+should use HTTPS; localhost is suitable for development.
 
 ## Install
 
-For a local trial, use the [quick start](#try-it--drive-it-with-claude-code) above —
-`wp-env` installs and activates both plugins for you. Install manually to add the adapter to
-an existing site:
-
-1. Download `webmcp-adapter.zip` from the
-   [latest release](https://github.com/galatanovidiu/webmcp-adapter/releases/latest) and
-   upload it via **Plugins → Add New → Upload Plugin** (or copy this folder to
-   `wp-content/plugins/webmcp-adapter`). Activate **WebMCP Adapter**.
-2. Install the [abilities-catalog](https://github.com/galatanovidiu/abilities-catalog)
-   companion so the adapter has abilities worth exposing; without it, only core abilities
-   (such as `core/get-site-info`) are available.
-3. To allow writes, enable the exposure settings (see [Safety model](#safety-model)). Leave
-   them off for a read-only setup.
+For a local trial, use the Codex quick start above. To install manually, download
+`webmcp-adapter.zip` from the
+[latest release](https://github.com/galatanovidiu/webmcp-adapter/releases/latest),
+upload it under **Plugins → Add New → Upload Plugin**, and activate **WebMCP
+Adapter**. No companion abilities plugin is required.
 
 ## Status
 
-Proof of concept. Reads, writes, the destructive tier, and the dangerous tier have been
-verified end-to-end in Chrome 149. The WebMCP API is a draft and may change; field names
-and feature detection are expected to need updates as it evolves.
+Proof of concept. The frontend read, write, and save/publish tiers are covered by the
+local browser test workflows. WebMCP is still a draft and browser support can change.
 
 ## License
 

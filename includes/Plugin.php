@@ -50,7 +50,7 @@ final class Plugin
 		// Admin-only by default. Front-end exposure is opt-in and added later.
 		add_action('admin_enqueue_scripts', [$this, 'enqueueAdapter']);
 
-		// Ship the write-tools toggle to the adapter as script-module data. The
+		// Ship the exposure toggles to the adapter as script-module data. The
 		// filter is registered unconditionally at load because core prints module
 		// data late (`print_script_module_data`), only for queued modules.
 		add_filter('script_module_data_' . self::MODULE_HANDLE, [$this, 'addModuleData']);
@@ -59,8 +59,9 @@ final class Plugin
 	/**
 	 * Registers and enqueues the adapter script module.
 	 *
-	 * Depends on the core Abilities API client modules. The adapter reads the
-	 * client ability store and registers each ability as a WebMCP tool.
+	 * Depends on the Abilities API client module. The adapter reads the client
+	 * ability store and registers frontend abilities as WebMCP tools. It does not
+	 * load or expose server abilities.
 	 *
 	 * @return void
 	 */
@@ -79,12 +80,7 @@ final class Plugin
 		wp_register_script_module(
 			self::MODULE_HANDLE,
 			WEBMCP_ADAPTER_URL . 'src/adapter.js',
-			[
-				// core-abilities statically imports @wordpress/abilities and
-				// fetches server abilities into the client store.
-				'@wordpress/abilities',
-				'@wordpress/core-abilities',
-			],
+			['@wordpress/abilities'],
 			WEBMCP_ADAPTER_VERSION
 		);
 
@@ -92,35 +88,26 @@ final class Plugin
 	}
 
 	/**
-	 * Adds the write, destructive, and dangerous toggles to the adapter's
-	 * script-module data.
+	 * Adds the write and destructive toggles to the adapter's script-module data.
 	 *
 	 * Core serializes this array into a `<script type="application/json"
 	 * id="wp-script-module-data-webmcp-adapter/adapter">` tag the adapter reads on
 	 * load. The flags are ALWAYS emitted (never an empty array) so their absence is
 	 * unambiguous: a missing tag means the filter did not run, which the adapter
-	 * treats — like a false value — as writes disabled (fail-safe). `dangerousToolsEnabled`
-	 * is the dangerous-tier gate; `dangerousToolOptIn` is the list of individually
-	 * armed dangerous ability names. `allowAutomatedConfirmation` is the default-OFF
-	 * demo flag that relaxes the in-page human-only confirmation guard. `screenLinks`
-	 * is the writes-only map of ability name to an admin-relative URL template; `adminUrl`
-	 * is the wp-admin base used to build an absolute link from such a template.
+	 * treats — like a false value — as writes disabled (fail-safe).
+	 * `allowAutomatedConfirmation` is the default-OFF demo flag that relaxes the
+	 * in-page synthetic-click guard. `screenLinks` is the writes-only map
+	 * of ability name to an admin-relative URL template; `adminUrl` is the wp-admin
+	 * base used to build an absolute link from such a template.
 	 *
 	 * @param array<string,mixed> $data Existing module data.
-	 * @return array<string,mixed> Data including the write, destructive, and dangerous flags,
-	 *                             the screen-link map, and the wp-admin base URL.
+	 * @return array<string,mixed> Data including the exposure flags, screen-link map,
+	 *                             and wp-admin base URL.
 	 */
 	public function addModuleData(array $data): array
 	{
 		$data['writeToolsEnabled']       = Settings::isEnabled();
 		$data['destructiveToolsEnabled'] = Settings::isDestructiveEnabled();
-		$data['dangerousToolsEnabled']   = Settings::isDangerousEnabled();
-		$data['dangerousToolOptIn']      = Settings::optedInTools();
-		// The Abilities API client store drops custom annotation keys (it keeps only
-		// readonly/destructive/idempotent), so the browser cannot read `dangerous`
-		// from an ability's annotations. Ship the canonical list of dangerous ability
-		// names instead; the adapter recognizes a dangerous tool by name.
-		$data['dangerousToolNames']      = array_keys(Settings::dangerousTools());
 		$data['allowAutomatedConfirmation'] = Settings::isAutomatedConfirmationAllowed();
 		// Writes-only map of ability name to an admin-relative URL template (with
 		// {param} tokens). Abilities register their own screen via this filter; the
