@@ -110,8 +110,8 @@ Use Playwright for tests that combine tool calls with the editor or page UI.
 After login, open the intended editor URL directly, wait for the block tree to
 settle, and then fetch tools.
 
-Destructive calls show the plugin confirmation modal. Playwright clicks are trusted
-browser events and can approve it:
+Consequential and privileged calls show the plugin confirmation modal. Playwright
+clicks are trusted browser events and can approve it:
 
 ```js
 const resultPromise = executeTool('webmcp.save-post', {});
@@ -127,7 +127,7 @@ clean up the orphaned modal explicitly when it cancels only the outer invocation
 ## Required regression coverage
 
 - frontend provenance filter;
-- write and destructive exposure gates;
+- risk classification and consequential/privileged confirmation;
 - registration promise rejection without an unhandled rejection;
 - late frontend registration without duplicates;
 - `title`, schema, `readOnlyHint`, and `untrustedContentHint` mapping;
@@ -138,6 +138,9 @@ clean up the orphaned modal explicitly when it cancels only the outer invocation
   persistence (`tools/verify-general-form.mjs`);
 - insert/read/undo without persistence;
 - save decline and approve;
+- minimized activity UI, running/final states, keyboard operation, isolated
+  styles, session storage, and safe untrusted-text rendering
+  (`tools/verify-activity-ui.mjs`);
 - navigation followed by rediscovery;
 - no request to `/wp-abilities/v1/abilities`.
 

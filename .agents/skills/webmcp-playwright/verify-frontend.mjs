@@ -251,8 +251,8 @@ try {
 		const raw = outcome.value;
 		return typeof raw === 'string' ? JSON.parse(raw) : raw;
 	};
-	// Destructive tools pop the confirmation modal; click accept (trusted click).
-	const callDestructive = async (name, args = {}) => {
+	// Consequential tools pop the confirmation modal; click accept (trusted click).
+	const callConsequential = async (name, args = {}) => {
 		await startDeferredTool(name, args);
 		await page.waitForSelector('[data-webmcp-confirm-accept]', { timeout: 8000 });
 		await page.click('[data-webmcp-confirm-accept]', { force: true });
@@ -465,7 +465,7 @@ try {
 	await page.evaluate(() =>
 		window.__webmcpRegistrationRejectionController?.abort());
 	const savePostTool = tools.find((t) => t.name === 'webmcp.save-post');
-	check('save-post description carries the destructive ⚠ prefix',
+	check('save-post description carries the confirmation ⚠ prefix',
 		Boolean(savePostTool && savePostTool.description.startsWith('⚠')),
 		savePostTool ? savePostTool.description.slice(0, 40) : 'tool missing');
 
@@ -626,10 +626,11 @@ try {
 	await startDeferredTool('webmcp.save-post', {});
 	await page.waitForSelector('[data-webmcp-confirm-accept]', { timeout: 8000 });
 	await page.evaluate(() =>
-		document.querySelector('[data-webmcp-confirm-accept]').click());
+		document.querySelector('[data-webmcp-confirm-host]').shadowRoot
+			.querySelector('[data-webmcp-confirm-accept]').click());
 	await page.waitForTimeout(100);
 	check('synthetic confirmation cannot approve save-post',
-		await page.locator('[data-webmcp-confirm-overlay]').count() === 1 &&
+		await page.locator('[data-webmcp-confirm-host]').count() === 1 &&
 		await page.locator('[data-webmcp-confirm-automation]').count() === 0);
 	await page.click('[data-webmcp-confirm-cancel]', { force: true });
 	const declined = await finishDeferredTool();
@@ -643,12 +644,14 @@ try {
 			.find((script) => script.src.includes('/webmcp-adapter/src/adapter.js'));
 		if (!adapterScript) return { available: false, reason: 'adapter module script not found' };
 		const moduleUrl = new URL('./confirmation.js', adapterScript.src);
-		const { confirmDestructive } = await import(moduleUrl.href);
+		const { confirmRiskyAction } = await import(moduleUrl.href);
 		const ability = { name: 'webmcp-probe/confirmation', label: 'Confirmation probe' };
 
 		const controller = new AbortController();
 		let continued = false;
-		const invocation = confirmDestructive(ability, {}, controller.signal, 1000)
+		const invocation = confirmRiskyAction(ability, {}, {
+			risk: 'consequential', signal: controller.signal, timeoutMs: 1000,
+		})
 			.then(() => { continued = true; });
 		controller.abort();
 		let abortOutcome;
@@ -658,9 +661,11 @@ try {
 		} catch (error) {
 			abortOutcome = { resolved: false, name: error.name };
 		}
-		const afterAbort = document.querySelectorAll('[data-webmcp-confirm-overlay]').length;
-		const timedOut = await confirmDestructive(ability, {}, undefined, 20);
-		const afterTimeout = document.querySelectorAll('[data-webmcp-confirm-overlay]').length;
+		const afterAbort = document.querySelectorAll('[data-webmcp-confirm-host]').length;
+		const timedOut = await confirmRiskyAction(ability, {}, {
+			risk: 'consequential', timeoutMs: 20,
+		});
+		const afterTimeout = document.querySelectorAll('[data-webmcp-confirm-host]').length;
 		return { available: true, abortOutcome, continued, afterAbort, timedOut, afterTimeout };
 	});
 	check('controlled callback abort rejects with AbortError and blocks continuation',
@@ -695,13 +700,13 @@ try {
 	check('standard cancellation API available', abortSupported);
 	if (abortSupported) {
 		await page.waitForSelector('[data-webmcp-confirm-overlay]', { timeout: 8000 });
-		const abortForwarded = await page.locator('[data-webmcp-confirm-overlay]')
+		const abortForwarded = await page.locator('[data-webmcp-confirm-host]')
 			.getAttribute('data-webmcp-confirm-abort-aware') !== null;
 		await page.evaluate(() => window.__webmcpAbortController.abort());
 		const aborted = await page.evaluate(() => window.__webmcpAbortResult);
 		check('aborted save rejects', aborted.resolved === false,
 			JSON.stringify(aborted));
-		const overlayCount = await page.locator('[data-webmcp-confirm-overlay]').count();
+		const overlayCount = await page.locator('[data-webmcp-confirm-host]').count();
 		console.log(`  INFO browser forwarded callback signal: ${abortForwarded}; overlays after outer cancellation: ${overlayCount}`);
 		if (!abortForwarded && overlayCount === 1) {
 			// Current Chrome may cancel the outer invocation without forwarding its
@@ -713,19 +718,19 @@ try {
 		check('abort leaves edits unsaved', afterAbort.isDirty === true);
 	}
 
-	console.log('\n== T13: save-post (destructive, modal-confirmed) ==');
-	const sv1 = await callDestructive('webmcp.save-post', {});
+	console.log('\n== T13: save-post (consequential, modal-confirmed) ==');
+	const sv1 = await callConsequential('webmcp.save-post', {});
 	check('draft saved', sv1.saved === true && sv1.status === 'draft' && sv1.postId > 0, JSON.stringify(sv1));
 	createdPostId = sv1.postId || null;
 	const ctx4 = await callTool('webmcp.editor-context');
 	check('not dirty after save', ctx4.isDirty === false);
 
 	console.log('\n== T14: save-post publish flow ==');
-	const sv2 = await callDestructive('webmcp.save-post', { status: 'publish' });
+	const sv2 = await callConsequential('webmcp.save-post', { status: 'publish' });
 	check('published', sv2.saved === true && sv2.status === 'publish', JSON.stringify(sv2));
 	createdPostId = sv2.postId || createdPostId;
 	check('live link', typeof sv2.link === 'string' && sv2.link.includes('full-control-verify'), sv2.link);
-	const sv3 = await callDestructive('webmcp.save-post', {});
+	const sv3 = await callConsequential('webmcp.save-post', {});
 	check('save with no changes reports honestly', sv3.saved === false && /Nothing to save/.test(sv3.reason), JSON.stringify(sv3));
 
 	const trashed = await page.evaluate(async (postId) => {

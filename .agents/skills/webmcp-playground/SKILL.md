@@ -1,6 +1,6 @@
 ---
 name: webmcp-playground
-description: One-command, disposable WordPress Playground for testing the frontend-only ChatGPT Work and Codex Site tools adapter — no MySQL, local install, companion plugin, or build. Boots a real-HTTP WP 7.0 with the adapter mounted and active, then drives its tools via the webmcp-playwright skill. Use when the user wants a throwaway adapter test, smoke test, or repeatable setup. Triggers: "test in playground", "easy way to test", "try the plugin", "webmcp playground".
+description: 'One-command, disposable WordPress Playground for testing the frontend-only ChatGPT Work and Codex Site tools adapter — no MySQL, local install, companion plugin, or build. Boots a real-HTTP WP 7.0 with the adapter mounted and active, then drives its tools via the webmcp-playwright skill. Use when the user wants a throwaway adapter test, smoke test, or repeatable setup. Triggers: "test in playground", "easy way to test", "try the plugin", "webmcp playground".'
 ---
 
 # ChatGPT Work and Codex Site tools in Playground
@@ -21,8 +21,9 @@ or activity-review UI.
 `@wp-playground/cli server` serves WordPress over a **real HTTP port** (`:9400`) — NOT the
 `playground.wordpress.net` iframe. This provides a normal top-level localhost
 document for page-side WebMCP regression tests. The plugin is **mounted live** from
-the repo, so edits to PHP or `src/adapter.js` show up on reload — the same no-build
-flow as the local site.
+the repo before installation so the activation blueprint works on a fresh port.
+Edits to PHP or `src/adapter.js` show up on reload — the same no-build flow as the
+local site.
 
 ## Prerequisites
 
@@ -99,6 +100,8 @@ Playground is fully ephemeral — its SQLite database lives only in a temp dir a
 ## Gotchas
 
 - First boot downloads `wordpress-7.0.zip`; later boots are cached and fast.
+- Numeric `WP` values resolve through the exact WordPress.org release archive so
+  the compatibility target cannot drift to a newer core version.
 - The script records and validates the process it starts. It refuses to reuse or
   stop an unknown process that already owns the configured port.
 - Compatible block-editor screens expose the complete 17-tool inventory;
